@@ -1,5 +1,32 @@
+#include <bitswap.h>
+#include <chipsets.h>
+#include <color.h>
+#include <colorpalettes.h>
+#include <colorutils.h>
+#include <controller.h>
+#include <cpp_compat.h>
+#include <dmx.h>
+#include <fastled_config.h>
+#include <fastled_delay.h>
+#include <fastled_progmem.h>
+#include <FastLED.h>
+#include <fastpin.h>
+#include <fastspi_bitbang.h>
+#include <fastspi_dma.h>
+#include <fastspi_nop.h>
+#include <fastspi_ref.h>
+#include <fastspi_types.h>
+#include <fastspi.h>
+#include <hsv2rgb.h>
+#include <led_sysdefs.h>
+#include <lib8tion.h>
+#include <noise.h>
+#include <pixelset.h>
+#include <pixeltypes.h>
+#include <platforms.h>
+#include <power_mgt.h>
+
 #include <ArduinoOTA.h>
-#include <Adafruit_NeoPixel.h>
 #include <PubSubClient.h>
 #include "PapertrailLogger.h"
 #include "secrets.h"
@@ -7,7 +34,7 @@
 // Stubs
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 uint32_t Wheel(byte WheelPos);
-void RainbowCycleUpdate(Adafruit_NeoPixel *pixels, uint8_t index);
+// void RainbowCycleUpdate(Adafruit_NeoPixel *pixels, uint8_t index);
 
 bool isDebug = false;
 
@@ -19,13 +46,13 @@ unsigned long wifiReconnectInterval = 30000;
 PapertrailLogger *infoLog;
 
 const gpio_num_t relayPin = GPIO_NUM_26;
-const gpio_num_t  shelf1Pin = GPIO_NUM_14;
-const gpio_num_t  shelf2Pin = GPIO_NUM_32;
-const gpio_num_t  shelf3Pin = GPIO_NUM_15;
-const gpio_num_t  shelf4Pin = GPIO_NUM_33;
-const gpio_num_t  shelf5Pin = GPIO_NUM_27;
-const gpio_num_t  shelf6Pin = GPIO_NUM_12;
-const gpio_num_t  shelf7Pin = GPIO_NUM_13;
+const gpio_num_t shelf1Pin = GPIO_NUM_14;
+const gpio_num_t shelf2Pin = GPIO_NUM_32;
+const gpio_num_t shelf3Pin = GPIO_NUM_15;
+const gpio_num_t shelf4Pin = GPIO_NUM_33;
+const gpio_num_t shelf5Pin = GPIO_NUM_27;
+const gpio_num_t shelf6Pin = GPIO_NUM_12;
+const gpio_num_t shelf7Pin = GPIO_NUM_13;
 
 const uint8_t fps = 60;
 uint32_t nextRun = 0;
@@ -36,7 +63,8 @@ typedef enum {
 } LightEffect;
 
 struct ShelfData {
-    uint8_t numLeds;
+    const gpio_num_t pin;
+    const uint8_t numLeds;
     bool enabled;
     bool active;
     uint8_t effect;
@@ -48,24 +76,25 @@ struct ShelfData {
 const uint8_t shelfCount = 7;
 
 ShelfData shelfData[shelfCount] = {
-    { 95, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 95, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 96, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 82, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 82, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 35, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 40, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} }
+    { GPIO_NUM_14, 95, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
+    { GPIO_NUM_32, 95, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
+    { GPIO_NUM_15, 96, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
+    { GPIO_NUM_33, 82, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
+    { GPIO_NUM_27, 82, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
+    { GPIO_NUM_12, 35, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
+    { GPIO_NUM_13, 40, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} }
 };
 
-Adafruit_NeoPixel shelves[shelfCount] = {
-    Adafruit_NeoPixel(shelfData[0].numLeds, shelf1Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[1].numLeds, shelf2Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[2].numLeds, shelf3Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[3].numLeds, shelf4Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[4].numLeds, shelf5Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[5].numLeds, shelf6Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[6].numLeds, shelf7Pin, NEO_GRB + NEO_KHZ800)
-};
+CRGBArray<95> shelf1;
+CRGBArray<95> shelf2;
+CRGBArray<96> shelf3;
+CRGBArray<82> shelf4;
+CRGBArray<82> shelf5;
+CRGBArray<35> shelf6;
+CRGBArray<40> shelf7;
+
+struct CRGB *shelves[] ={shelf1, shelf2, shelf3, shelf4, shelf5, shelf6, shelf7}; 
+
 
 bool psuShouldBeEnabled = false;
 bool psuEnabled = false;
@@ -232,6 +261,10 @@ void setup()
 {
     gpio_set_direction(relayPin, GPIO_MODE_OUTPUT); // RELAY
 
+    for (int i = 0; i < shelfCount; i++)
+        gpio_set_direction(shelfData[i].pin, GPIO_MODE_OUTPUT);
+
+/*
     gpio_set_direction(shelf1Pin, GPIO_MODE_OUTPUT); // Shelf 1
     gpio_set_direction(shelf2Pin, GPIO_MODE_OUTPUT); // Shelf 2
     gpio_set_direction(shelf3Pin, GPIO_MODE_OUTPUT); // Shelf 3
@@ -239,7 +272,7 @@ void setup()
     gpio_set_direction(shelf5Pin, GPIO_MODE_OUTPUT); // Shelf 5
     gpio_set_direction(shelf6Pin, GPIO_MODE_OUTPUT); // Shelf 6
     gpio_set_direction(shelf7Pin, GPIO_MODE_OUTPUT); // Shelf 7
-  
+ */ 
     gpio_set_level(relayPin, LOW); // LOW = OFF, HIGH = ON
 
     uint8_t chipid[6];
@@ -260,12 +293,38 @@ void setup()
     mqttClient.setServer(mqtt_server, 1883);
     mqttClient.setCallback(mqttCallback);
 
+
+
+    // for (int i = 0; i < shelfCount; i++)
+    // {
+        // FastLED.addLeds<NEOPIXEL, shelfData[i].pin>(shelves[i], shelfData[i].numLeds);
+        // FastLED.addLeds<NEOPIXEL, 32>(shelves[0], 60);
+
+        //shelfController[0] = &
+        FastLED.addLeds<WS2813, shelf1Pin, RGB>(shelf1, shelfData[0].numLeds);
+        //shelfController[1] = &
+        FastLED.addLeds<WS2813, shelf2Pin, RGB>(shelf2, shelfData[1].numLeds);
+        //shelfController[2] = &
+        FastLED.addLeds<WS2813, shelf3Pin, RGB>(shelf3, shelfData[2].numLeds);
+        //shelfController[3] = &
+        FastLED.addLeds<WS2813, shelf4Pin, RGB>(shelf4, shelfData[3].numLeds);
+        //shelfController[4] = &
+        FastLED.addLeds<WS2813, shelf5Pin, RGB>(shelf5, shelfData[4].numLeds);
+        //shelfController[5] = &
+        FastLED.addLeds<WS2813, shelf6Pin, RGB>(shelf6, shelfData[5].numLeds);
+        //shelfController[6] = &
+        FastLED.addLeds<WS2813, shelf7Pin, RGB>(shelf7, shelfData[6].numLeds);
+
+    // }
+
+/*
     for (uint8_t i = 0; i < shelfCount; i++)
     {
         shelves[i].begin();
         shelves[i].clear();
         shelves[i].show();
     }
+*/
 }
 
 void loop()
@@ -291,8 +350,8 @@ void loop()
     // if WiFi is down, try reconnecting
     if ((WiFi.status() != WL_CONNECTED) && (currentMillis - wifiReconnectPreviousMillis >= wifiReconnectInterval))
     {
-        Serial.print(millis());
-        Serial.println("Reconnecting to WiFi...");
+        // Serial.print(millis());
+        // Serial.println("Reconnecting to WiFi...");
         WiFi.disconnect();
         WiFi.reconnect();
 
@@ -311,9 +370,9 @@ void loop()
             gpio_set_level(relayPin, HIGH); // LOW = OFF, HIGH = ON
             psuEnabled = true;
             psuReady = false;
-            psuActionableTime = millis() + psuStartupBuffer;
+            psuActionableTime = currentMillis + psuStartupBuffer;
         }
-        else if (millis() > psuActionableTime)
+        else if (currentMillis > psuActionableTime)
         {
             psuReady = true;
             psuActionableTime = 0;
@@ -324,9 +383,9 @@ void loop()
     {
         if (psuActionableTime == 0)
         {
-            psuActionableTime = millis() + psuShutdownBuffer;
+            psuActionableTime = currentMillis + psuShutdownBuffer;
         }
-        else if (millis() > psuActionableTime)
+        else if (currentMillis > psuActionableTime)
         {
             psuActionableTime = 0;
             gpio_set_level(relayPin, LOW); // LOW = OFF, HIGH = ON
@@ -338,7 +397,7 @@ void loop()
     if (psuShouldBeEnabled && psuReady && psuActionableTime != 0)
         psuActionableTime = 0;
 
-    if (psuReady && millis() > nextRun)
+    if (psuReady && currentMillis > nextRun)
     {
         index--; // Keep it moving
         for (int i = 0; i < shelfCount; i++)
@@ -349,9 +408,9 @@ void loop()
             if (shelfData[i].enabled && !shelfData[i].active)
             {
                 shelfData[i].active = true;
-                shelves[i].begin();
+                // shelves[i].begin();
                 shelfData[i].brightness = 0;
-                shelves[i].clear();
+                // shelves[i].clear();
             }
 
             if (shelfData[i].enabled && shelfData[i].brightness != shelfData[i].targetBrightness)
@@ -363,7 +422,9 @@ void loop()
                 else
                     shelfData[i].brightness = shelfData[i].targetBrightness;
                 
-                shelves[i].setBrightness(shelfData[i].brightness);
+                // shelves[i].setBrightness(shelfData[i].brightness);
+                // shelfController[i].setBrightness(shelfData[i].brightness);
+                FastLED.setBrightness(shelfData[0].brightness);
             }
             else if (!shelfData[i].enabled && shelfData[i].brightness != 0)
             {
@@ -371,7 +432,8 @@ void loop()
                     shelfData[i].brightness -= 5;
                 else
                     shelfData[i].brightness = 0;
-                shelves[i].setBrightness(shelfData[i].brightness);
+                // shelfController[i].setBrightness(shelfData[i].brightness);
+                FastLED.setBrightness(shelfData[0].brightness);
             }
             else if (!shelfData[i].enabled && shelfData[i].brightness == 0 && shelfData[i].active)
             {
@@ -380,44 +442,51 @@ void loop()
 
             if (shelfData[i].effect == LIGHT_EFFECT_RAINBOW)
             {
-                RainbowCycleUpdate(&shelves[i], index);
+                // RainbowCycleUpdate(&shelves[i], index);
             }
             else if (shelfData[i].effect == LIGHT_EFFECT_NONE)
             {
-                for (uint8_t j = 0; j < shelves[i].numPixels(); j++) {
-                    shelves[i].setPixelColor(j, shelfData[i].color[1], shelfData[i].color[0], shelfData[i].color[2]);
-                }
+                fill_solid(shelves[i], shelfData[i].numLeds, CRGB(shelfData[i].color[0],shelfData[i].color[1],shelfData[i].color[2])); //8 is number of elements in the array
+                // for (uint8_t j÷ = 0; j < shelves[i].numPixels(); j++) {
+                    // shelves[i].setPixelColor(j, shelfData[i].color[1], shelfData[i].color[0], shelfData[i].color[2]);
+                // }
             }
-            shelves[i].show();
+            //FastLED[i].showLeds(255);//shelfData[i].brightness);
+            //shelves[i].show();
         }
+        FastLED.show();
         nextRun = millis() + (1000/fps);
     }
 }
 
 // Update the Rainbow Cycle Pattern
+/*
 void RainbowCycleUpdate(Adafruit_NeoPixel *pixels, uint8_t index)
 {
     for(int i=0; i< pixels->numPixels(); i++)
     {
-        pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + index) & 255));
+        // pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + index) & 255));
     }
 }
-
+*/
 uint32_t Wheel(byte WheelPos)
 {
     WheelPos = 255 - WheelPos;
     if(WheelPos < 85)
     {
-        return shelves[0].Color(255 - WheelPos * 3, 0, WheelPos * 3);
+        // return shelves[0].Color(255 - WheelPos * 3, 0, WheelPos * 3);
+        return 0;
     }
     else if(WheelPos < 170)
     {
         WheelPos -= 85;
-        return shelves[0].Color(0, WheelPos * 3, 255 - WheelPos * 3);
+        // return shelves[0].Color(0, WheelPos * 3, 255 - WheelPos * 3);
+        return 0;
     }
     else
     {
         WheelPos -= 170;
-        return shelves[0].Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+        // return shelves[0].Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+        return 0;
     }
 }
