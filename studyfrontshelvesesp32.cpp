@@ -1,3 +1,5 @@
+#define FASTLED_ESP32_FLASH_LOCK 0
+
 #include <bitswap.h>
 #include <chipsets.h>
 #include <color.h>
@@ -264,15 +266,6 @@ void setup()
     for (int i = 0; i < shelfCount; i++)
         gpio_set_direction(shelfData[i].pin, GPIO_MODE_OUTPUT);
 
-/*
-    gpio_set_direction(shelf1Pin, GPIO_MODE_OUTPUT); // Shelf 1
-    gpio_set_direction(shelf2Pin, GPIO_MODE_OUTPUT); // Shelf 2
-    gpio_set_direction(shelf3Pin, GPIO_MODE_OUTPUT); // Shelf 3
-    gpio_set_direction(shelf4Pin, GPIO_MODE_OUTPUT); // Shelf 4
-    gpio_set_direction(shelf5Pin, GPIO_MODE_OUTPUT); // Shelf 5
-    gpio_set_direction(shelf6Pin, GPIO_MODE_OUTPUT); // Shelf 6
-    gpio_set_direction(shelf7Pin, GPIO_MODE_OUTPUT); // Shelf 7
- */ 
     gpio_set_level(relayPin, LOW); // LOW = OFF, HIGH = ON
 
     uint8_t chipid[6];
@@ -285,7 +278,7 @@ void setup()
     connectToNetwork();
 
     // ArduinoOTA.begin(WiFi.localIP(), "Arduino", "password", InternalStorage);
-    ArduinoOTA.setHostname("esp32-idrive");
+    ArduinoOTA.setHostname(deviceName);
     ArduinoOTA.begin();
 
     mqttClient.setBufferSize(2048);
@@ -468,7 +461,7 @@ void RainbowCycleUpdate(Adafruit_NeoPixel *pixels, uint8_t index)
         // pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + index) & 255));
     }
 }
-*/
+
 uint32_t Wheel(byte WheelPos)
 {
     WheelPos = 255 - WheelPos;
@@ -490,3 +483,4 @@ uint32_t Wheel(byte WheelPos)
         return 0;
     }
 }
+*/
