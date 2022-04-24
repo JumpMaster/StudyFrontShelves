@@ -58,13 +58,13 @@ ShelfData shelfData[shelfCount] = {
 };
 
 Adafruit_NeoPixel shelves[shelfCount] = {
-    Adafruit_NeoPixel(shelfData[0].numLeds, shelf1Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[1].numLeds, shelf2Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[2].numLeds, shelf3Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[3].numLeds, shelf4Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[4].numLeds, shelf5Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[5].numLeds, shelf6Pin, NEO_GRB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[6].numLeds, shelf7Pin, NEO_GRB + NEO_KHZ800)
+    Adafruit_NeoPixel(shelfData[0].numLeds, shelf1Pin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[1].numLeds, shelf2Pin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[2].numLeds, shelf3Pin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[3].numLeds, shelf4Pin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[4].numLeds, shelf5Pin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[5].numLeds, shelf6Pin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[6].numLeds, shelf7Pin, NEO_RGB + NEO_KHZ800)
 };
 
 bool psuShouldBeEnabled = false;
@@ -201,7 +201,8 @@ void mqttConnect()
             mqttClient.subscribe("home/study/light/front-shelf/+/#");
             
             char buffer[40];
-            for (int i = 0; i < shelfCount; i++) {
+            for (int i = 0; i < shelfCount; i++)
+            {
                 snprintf(buffer, sizeof(buffer), "home/study/light/front-shelf/%d/switch", i+1);
                 mqttClient.publish(buffer, shelfData[i].enabled ? "ON" : "OFF");
             }
@@ -384,8 +385,9 @@ void loop()
             }
             else if (shelfData[i].effect == LIGHT_EFFECT_NONE)
             {
-                for (uint8_t j = 0; j < shelves[i].numPixels(); j++) {
-                    shelves[i].setPixelColor(j, shelfData[i].color[1], shelfData[i].color[0], shelfData[i].color[2]);
+                for (uint8_t j = 0; j < shelves[i].numPixels(); j++)
+                {
+                    shelves[i].setPixelColor(j, shelfData[i].color[0], shelfData[i].color[1], shelfData[i].color[2]);
                 }
             }
             shelves[i].show();
