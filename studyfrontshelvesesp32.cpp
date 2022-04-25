@@ -19,52 +19,51 @@ unsigned long wifiReconnectInterval = 30000;
 PapertrailLogger *infoLog;
 
 const gpio_num_t relayPin = GPIO_NUM_26;
-const gpio_num_t  shelf1Pin = GPIO_NUM_14;
-const gpio_num_t  shelf2Pin = GPIO_NUM_32;
-const gpio_num_t  shelf3Pin = GPIO_NUM_15;
-const gpio_num_t  shelf4Pin = GPIO_NUM_33;
-const gpio_num_t  shelf5Pin = GPIO_NUM_27;
-const gpio_num_t  shelf6Pin = GPIO_NUM_12;
-const gpio_num_t  shelf7Pin = GPIO_NUM_13;
 
 const uint8_t fps = 60;
 uint32_t nextRun = 0;
 
+bool showFPS = false;
+uint32_t nextFPSCount;
+uint32_t fpsCount;
+
 typedef enum {
     LIGHT_EFFECT_NONE = 0,
-    LIGHT_EFFECT_RAINBOW = 1
+    LIGHT_EFFECT_RAINBOW = 1,
+    LIGHT_EFFECT_TWINKLE = 2,
 } LightEffect;
 
 struct ShelfData {
-    uint8_t numLeds;
+    const gpio_num_t dataPin;
+    const uint8_t numLeds;
     bool enabled;
     bool active;
     uint8_t effect;
     uint8_t targetBrightness;
     uint8_t brightness;
-    uint8_t color[3];
+    uint32_t color;
 };
 
 const uint8_t shelfCount = 7;
 
 ShelfData shelfData[shelfCount] = {
-    { 95, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 95, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 96, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 82, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 82, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 35, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} },
-    { 40, false, false, LIGHT_EFFECT_NONE, 255, 0, {255, 255, 255} }
+    { GPIO_NUM_14, 95, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
+    { GPIO_NUM_32, 95, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
+    { GPIO_NUM_15, 96, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
+    { GPIO_NUM_33, 82, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
+    { GPIO_NUM_27, 82, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
+    { GPIO_NUM_12, 35, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
+    { GPIO_NUM_13, 40, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215} //{255, 255, 255} }
 };
 
 Adafruit_NeoPixel shelves[shelfCount] = {
-    Adafruit_NeoPixel(shelfData[0].numLeds, shelf1Pin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[1].numLeds, shelf2Pin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[2].numLeds, shelf3Pin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[3].numLeds, shelf4Pin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[4].numLeds, shelf5Pin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[5].numLeds, shelf6Pin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[6].numLeds, shelf7Pin, NEO_RGB + NEO_KHZ800)
+    Adafruit_NeoPixel(shelfData[0].numLeds, shelfData[0].dataPin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[1].numLeds, shelfData[1].dataPin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[2].numLeds, shelfData[2].dataPin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[3].numLeds, shelfData[3].dataPin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[4].numLeds, shelfData[4].dataPin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[5].numLeds, shelfData[5].dataPin, NEO_RGB + NEO_KHZ800),
+    Adafruit_NeoPixel(shelfData[6].numLeds, shelfData[6].dataPin, NEO_RGB + NEO_KHZ800)
 };
 
 bool psuShouldBeEnabled = false;
@@ -113,13 +112,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     }
 
     uint8_t topicLen = strlen(topic);
-    
-    char isSet[4];
-    memcpy(isSet, &topic[topicLen-3], 3);
-    isSet[3] = '\0';
-
-    if (strcmp(isSet, "set") != 0)
-        return;
 
     char command[10];
     memcpy(command, &topic[31], topicLen-35);
@@ -160,15 +152,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     {
         char * token = strtok(p, ",");
 
+        uint8_t c[3];
         for (int i = 0; i < 3; i++) {
-            shelfData[light].color[i] = atoi(token);
+            c[i] = atoi(token);
             token = strtok(NULL, ",");
         }
+        shelfData[light].color = (c[0] << 16) | (c[1] << 8) | c[2];
     }
     else if (strcmp(command, "effect") == 0)
     {
         if (strcmp(p, "Rainbow") == 0)
             shelfData[light].effect = LIGHT_EFFECT_RAINBOW;
+        else if (strcmp(p, "Twinkle") == 0)
+            shelfData[light].effect = LIGHT_EFFECT_TWINKLE;
         else
             shelfData[light].effect = LIGHT_EFFECT_NONE;
     }
@@ -181,7 +177,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     snprintf(bufferPayload, sizeof(bufferPayload), "%d", shelfData[light].targetBrightness);
     mqttClient.publish(bufferTopic, bufferPayload);
     snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/rgb", light+1);
-    snprintf(bufferPayload, sizeof(bufferPayload), "%d,%d,%d", shelfData[light].color[0], shelfData[light].color[1], shelfData[light].color[2]);
+    snprintf(bufferPayload, sizeof(bufferPayload), "%d,%d,%d", (shelfData[light].color >> 16) & 0xff, (shelfData[light].color >> 8) & 0xff, shelfData[light].color & 0xff);
     mqttClient.publish(bufferTopic, bufferPayload);
     snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/effect", light+1);
     mqttClient.publish(bufferTopic, shelfData[light].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : "None");
@@ -198,7 +194,7 @@ void mqttConnect()
         {
             infoLog->println("Connected to MQTT");
 
-            mqttClient.subscribe("home/study/light/front-shelf/+/#");
+            mqttClient.subscribe("home/study/light/front-shelf/+/+/set");
             
             char buffer[40];
             for (int i = 0; i < shelfCount; i++)
@@ -233,14 +229,9 @@ void setup()
 {
     gpio_set_direction(relayPin, GPIO_MODE_OUTPUT); // RELAY
 
-    gpio_set_direction(shelf1Pin, GPIO_MODE_OUTPUT); // Shelf 1
-    gpio_set_direction(shelf2Pin, GPIO_MODE_OUTPUT); // Shelf 2
-    gpio_set_direction(shelf3Pin, GPIO_MODE_OUTPUT); // Shelf 3
-    gpio_set_direction(shelf4Pin, GPIO_MODE_OUTPUT); // Shelf 4
-    gpio_set_direction(shelf5Pin, GPIO_MODE_OUTPUT); // Shelf 5
-    gpio_set_direction(shelf6Pin, GPIO_MODE_OUTPUT); // Shelf 6
-    gpio_set_direction(shelf7Pin, GPIO_MODE_OUTPUT); // Shelf 7
-  
+    for (uint8_t i =0; i < shelfCount; i++)
+        gpio_set_direction(shelfData[0].dataPin, GPIO_MODE_OUTPUT);
+
     gpio_set_level(relayPin, LOW); // LOW = OFF, HIGH = ON
 
     uint8_t chipid[6];
@@ -253,7 +244,7 @@ void setup()
     connectToNetwork();
 
     // ArduinoOTA.begin(WiFi.localIP(), "Arduino", "password", InternalStorage);
-    ArduinoOTA.setHostname("esp32-idrive");
+    ArduinoOTA.setHostname(deviceName);
     ArduinoOTA.begin();
 
     mqttClient.setBufferSize(2048);
@@ -272,6 +263,7 @@ void setup()
 void loop()
 {
     unsigned long currentMillis = getMillis();
+    static uint16_t index;
     ArduinoOTA.handle();
 
     if (!mqttClient.connected())
@@ -292,7 +284,7 @@ void loop()
     // if WiFi is down, try reconnecting
     if ((WiFi.status() != WL_CONNECTED) && (currentMillis - wifiReconnectPreviousMillis >= wifiReconnectInterval))
     {
-        Serial.print(millis());
+        Serial.print(currentMillis);
         Serial.println("Reconnecting to WiFi...");
         WiFi.disconnect();
         WiFi.reconnect();
@@ -302,8 +294,6 @@ void loop()
 
         wifiReconnectPreviousMillis = currentMillis;
     }
-
-    static uint8_t index;
     
     if (psuShouldBeEnabled && !psuReady)
     {
@@ -312,9 +302,9 @@ void loop()
             gpio_set_level(relayPin, HIGH); // LOW = OFF, HIGH = ON
             psuEnabled = true;
             psuReady = false;
-            psuActionableTime = millis() + psuStartupBuffer;
+            psuActionableTime = currentMillis + psuStartupBuffer;
         }
-        else if (millis() > psuActionableTime)
+        else if (currentMillis > psuActionableTime)
         {
             psuReady = true;
             psuActionableTime = 0;
@@ -325,9 +315,9 @@ void loop()
     {
         if (psuActionableTime == 0)
         {
-            psuActionableTime = millis() + psuShutdownBuffer;
+            psuActionableTime = currentMillis + psuShutdownBuffer;
         }
-        else if (millis() > psuActionableTime)
+        else if (currentMillis > psuActionableTime)
         {
             psuActionableTime = 0;
             gpio_set_level(relayPin, LOW); // LOW = OFF, HIGH = ON
@@ -339,9 +329,22 @@ void loop()
     if (psuShouldBeEnabled && psuReady && psuActionableTime != 0)
         psuActionableTime = 0;
 
-    if (psuReady && millis() > nextRun)
+    if (psuReady && currentMillis > nextRun)
     {
-        index--; // Keep it moving
+        index += 100; // Keep it moving
+
+        if (showFPS) {
+            fpsCount++;
+
+            if (currentMillis > nextFPSCount) {
+                nextFPSCount = currentMillis + 1000;
+                char buffer[10];
+                snprintf(buffer, 10, "%d", fpsCount);
+                mqttClient.publish("log/fps", buffer);
+                fpsCount = 0;
+            }
+        }
+
         for (int i = 0; i < shelfCount; i++)
         {
             if (!shelfData[i].enabled && !shelfData[i].active && shelfData[i].brightness == 0)
@@ -350,8 +353,8 @@ void loop()
             if (shelfData[i].enabled && !shelfData[i].active)
             {
                 shelfData[i].active = true;
-                shelves[i].begin();
                 shelfData[i].brightness = 0;
+                shelves[i].begin();
                 shelves[i].clear();
             }
 
@@ -381,45 +384,17 @@ void loop()
 
             if (shelfData[i].effect == LIGHT_EFFECT_RAINBOW)
             {
-                RainbowCycleUpdate(&shelves[i], index);
+                shelves[i].rainbow(index, 1);
+            }
+            else if (shelfData[i].effect == LIGHT_EFFECT_TWINKLE)
+            {
             }
             else if (shelfData[i].effect == LIGHT_EFFECT_NONE)
             {
-                for (uint8_t j = 0; j < shelves[i].numPixels(); j++)
-                {
-                    shelves[i].setPixelColor(j, shelfData[i].color[0], shelfData[i].color[1], shelfData[i].color[2]);
-                }
+                shelves[i].fill(shelfData[i].color, 0, shelves[i].numPixels());
             }
             shelves[i].show();
         }
-        nextRun = millis() + (1000/fps);
-    }
-}
-
-// Update the Rainbow Cycle Pattern
-void RainbowCycleUpdate(Adafruit_NeoPixel *pixels, uint8_t index)
-{
-    for(int i=0; i< pixels->numPixels(); i++)
-    {
-        pixels->setPixelColor(i, Wheel(((i * 256 / pixels->numPixels()) + index) & 255));
-    }
-}
-
-uint32_t Wheel(byte WheelPos)
-{
-    WheelPos = 255 - WheelPos;
-    if(WheelPos < 85)
-    {
-        return shelves[0].Color(255 - WheelPos * 3, 0, WheelPos * 3);
-    }
-    else if(WheelPos < 170)
-    {
-        WheelPos -= 85;
-        return shelves[0].Color(0, WheelPos * 3, 255 - WheelPos * 3);
-    }
-    else
-    {
-        WheelPos -= 170;
-        return shelves[0].Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+        nextRun = currentMillis + (1000/fps);
     }
 }
