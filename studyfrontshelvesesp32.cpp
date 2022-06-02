@@ -28,7 +28,7 @@ uint32_t nextFPSCount;
 uint32_t fpsCount;
 
 typedef enum {
-    LIGHT_EFFECT_NONE = 0,
+    LIGHT_EFFECT_SOLID = 0,
     LIGHT_EFFECT_RAINBOW = 1,
     LIGHT_EFFECT_TWINKLE = 2,
 } LightEffect;
@@ -47,13 +47,13 @@ struct ShelfData {
 const uint8_t shelfCount = 7;
 
 ShelfData shelfData[shelfCount] = {
-    { GPIO_NUM_14, 95, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
-    { GPIO_NUM_32, 95, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
-    { GPIO_NUM_15, 96, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
-    { GPIO_NUM_33, 82, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
-    { GPIO_NUM_27, 82, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
-    { GPIO_NUM_12, 35, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215}, //{255, 255, 255} },
-    { GPIO_NUM_13, 40, false, false, LIGHT_EFFECT_NONE, 255, 0, 16777215} //{255, 255, 255} }
+    { GPIO_NUM_14, 95, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
+    { GPIO_NUM_32, 95, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
+    { GPIO_NUM_15, 96, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
+    { GPIO_NUM_33, 82, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
+    { GPIO_NUM_27, 82, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
+    { GPIO_NUM_12, 35, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
+    { GPIO_NUM_13, 40, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215}
 };
 
 Adafruit_NeoPixel shelves[shelfCount] = {
@@ -166,7 +166,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
         else if (strcmp(p, "Twinkle") == 0)
             shelfData[light].effect = LIGHT_EFFECT_TWINKLE;
         else
-            shelfData[light].effect = LIGHT_EFFECT_NONE;
+            shelfData[light].effect = LIGHT_EFFECT_SOLID;
     }
 
     char bufferTopic[50];
@@ -180,7 +180,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     snprintf(bufferPayload, sizeof(bufferPayload), "%d,%d,%d", (shelfData[light].color >> 16) & 0xff, (shelfData[light].color >> 8) & 0xff, shelfData[light].color & 0xff);
     mqttClient.publish(bufferTopic, bufferPayload);
     snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/effect", light+1);
-    mqttClient.publish(bufferTopic, shelfData[light].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : "None");
+    mqttClient.publish(bufferTopic, shelfData[light].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : "Solid");
 }
 
 void mqttConnect()
@@ -345,7 +345,7 @@ void loop()
             }
         }
 
-        for (int i = 0; i < shelfCount; i++)
+        for (int i = 0; i < shelfCount-1; i++) // shelfCount-1 as I'm bodging a combination of shelves 6 and 7.
         {
             if (!shelfData[i].enabled && !shelfData[i].active && shelfData[i].brightness == 0)
                 continue;
@@ -356,6 +356,11 @@ void loop()
                 shelfData[i].brightness = 0;
                 shelves[i].begin();
                 shelves[i].clear();
+                if (i == 5)
+                {
+                    shelves[i+1].begin();
+                    shelves[i+1].clear();
+                }
             }
 
             if (shelfData[i].enabled && shelfData[i].brightness != shelfData[i].targetBrightness)
@@ -368,6 +373,10 @@ void loop()
                     shelfData[i].brightness = shelfData[i].targetBrightness;
                 
                 shelves[i].setBrightness(shelfData[i].brightness);
+                if (i == 5)
+                {
+                    shelves[i+1].setBrightness(shelfData[i].brightness);
+                }
             }
             else if (!shelfData[i].enabled && shelfData[i].brightness != 0)
             {
@@ -376,6 +385,10 @@ void loop()
                 else
                     shelfData[i].brightness = 0;
                 shelves[i].setBrightness(shelfData[i].brightness);
+                if (i == 5)
+                {
+                    shelves[i+1].setBrightness(shelfData[i].brightness);
+                }
             }
             else if (!shelfData[i].enabled && shelfData[i].brightness == 0 && shelfData[i].active)
             {
@@ -384,16 +397,45 @@ void loop()
 
             if (shelfData[i].effect == LIGHT_EFFECT_RAINBOW)
             {
-                shelves[i].rainbow(index, 1);
+                //shelves[i].rainbow(index, 1);
+                
+                uint8_t saturation = 255;
+                uint8_t brightness = 255;
+                uint8_t numLeds;
+                numLeds = shelves[i].numPixels();
+                if (i == 5)
+                    numLeds += shelves[i+1].numPixels();
+
+                for (uint16_t j=0; j < numLeds; j++)
+                {
+                    uint16_t hue = index + (j * 65536) / numLeds;
+                    uint32_t color = shelves[i].ColorHSV(hue, saturation, brightness);
+                    color = shelves[i].gamma32(color);
+
+                    if (i == 5)
+                    {
+                        if (j < shelves[i].numPixels())
+                            shelves[i].setPixelColor((shelves[i].numPixels()-1) - j, color);
+                        else
+                            shelves[i+1].setPixelColor(j - shelves[i].numPixels(), color);
+                    }
+                    else
+                        shelves[i].setPixelColor(j, color);
+                }
+                
             }
             else if (shelfData[i].effect == LIGHT_EFFECT_TWINKLE)
             {
             }
-            else if (shelfData[i].effect == LIGHT_EFFECT_NONE)
+            else if (shelfData[i].effect == LIGHT_EFFECT_SOLID)
             {
                 shelves[i].fill(shelfData[i].color, 0, shelves[i].numPixels());
+                if (i == 5)
+                    shelves[i+1].fill(shelfData[i].color, 0, shelves[i+1].numPixels());
             }
             shelves[i].show();
+            if (i == 5)
+                shelves[i+1].show();
         }
         nextRun = currentMillis + (1000/fps);
     }
