@@ -87,12 +87,12 @@ void sendTelegrafMetrics()
     char buffer[150];
 
     snprintf(buffer, sizeof(buffer),
-        "status,device=%s uptime=%d,resetReason=%d,firmware=\"%s\",memFree=%ld,memTotal=%ld",
+        "status,device=%s uptime=%d,resetReason=%d,firmware=\"%s\",memUsed=%ld,memTotal=%ld",
         deviceName,
         uptime,
         esp_reset_reason(),
         esp_get_idf_version(),
-        ESP.getFreeHeap(),
+        ESP.getHeapSize()-ESP.getFreeHeap(),
         ESP.getHeapSize());
     mqttClient.publish("telegraf/particle", buffer);
 }
