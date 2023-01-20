@@ -7,7 +7,7 @@
 // Stubs
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 uint32_t Wheel(byte WheelPos);
-void RainbowCycleUpdate(Adafruit_NeoPixel *pixels, uint8_t index);
+//void RainbowCycleUpdate(Adafruit_NeoPixel *pixels, uint8_t index);
 
 bool isDebug = false;
 
@@ -20,20 +20,22 @@ PapertrailLogger *infoLog;
 
 const gpio_num_t relayPin = GPIO_NUM_26;
 
-const uint8_t fps = 60;
+const uint8_t fps = 120;
 uint32_t nextRun = 0;
 
 bool showFPS = false;
 uint32_t nextFPSCount;
 uint32_t fpsCount;
 
-typedef enum {
+typedef enum
+{
     LIGHT_EFFECT_SOLID = 0,
     LIGHT_EFFECT_RAINBOW = 1,
-    LIGHT_EFFECT_TWINKLE = 2,
+    LIGHT_EFFECT_HENRY = 2,
 } LightEffect;
 
-struct ShelfData {
+struct ShelfData
+{
     const gpio_num_t dataPin;
     const uint8_t numLeds;
     bool enabled;
@@ -46,7 +48,8 @@ struct ShelfData {
 
 const uint8_t shelfCount = 7;
 
-ShelfData shelfData[shelfCount] = {
+ShelfData shelfData[shelfCount] =
+{
     { GPIO_NUM_14, 95, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
     { GPIO_NUM_32, 95, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
     { GPIO_NUM_15, 96, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
@@ -56,7 +59,8 @@ ShelfData shelfData[shelfCount] = {
     { GPIO_NUM_13, 40, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215}
 };
 
-Adafruit_NeoPixel shelves[shelfCount] = {
+Adafruit_NeoPixel shelves[shelfCount] =
+{
     Adafruit_NeoPixel(shelfData[0].numLeds, shelfData[0].dataPin, NEO_RGB + NEO_KHZ800),
     Adafruit_NeoPixel(shelfData[1].numLeds, shelfData[1].dataPin, NEO_RGB + NEO_KHZ800),
     Adafruit_NeoPixel(shelfData[2].numLeds, shelfData[2].dataPin, NEO_RGB + NEO_KHZ800),
@@ -65,6 +69,12 @@ Adafruit_NeoPixel shelves[shelfCount] = {
     Adafruit_NeoPixel(shelfData[5].numLeds, shelfData[5].dataPin, NEO_RGB + NEO_KHZ800),
     Adafruit_NeoPixel(shelfData[6].numLeds, shelfData[6].dataPin, NEO_RGB + NEO_KHZ800)
 };
+
+                // RED, YELLOW, GREEN, BLUE, PURPLE
+const uint32_t HenryColors[] = {16711680, 16776960, 65280, 255, 16711935};
+uint8_t HenryColor = 0;
+bool HenryColorOrBlack = false;
+uint8_t HenryLedNumber = 0;
 
 bool psuShouldBeEnabled = false;
 bool psuEnabled = false;
@@ -113,7 +123,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
 
     uint8_t topicLen = strlen(topic);
 
-    char command[10];
+    char command[11];
     memcpy(command, &topic[31], topicLen-35);
     command[topicLen-35] = '\0';
 
@@ -158,13 +168,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
             token = strtok(NULL, ",");
         }
         shelfData[light].color = (c[0] << 16) | (c[1] << 8) | c[2];
+        if (light == 5) { shelfData[6].color = shelfData[5].color; }
     }
     else if (strcmp(command, "effect") == 0)
     {
         if (strcmp(p, "Rainbow") == 0)
             shelfData[light].effect = LIGHT_EFFECT_RAINBOW;
-        else if (strcmp(p, "Twinkle") == 0)
-            shelfData[light].effect = LIGHT_EFFECT_TWINKLE;
+        else if (strcmp(p, "Henry") == 0)
+        {
+            shelfData[light].effect = LIGHT_EFFECT_HENRY;
+            HenryColor = 0;
+            HenryColorOrBlack = false;
+            HenryLedNumber = 0;
+        }
         else
             shelfData[light].effect = LIGHT_EFFECT_SOLID;
     }
@@ -180,7 +196,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     snprintf(bufferPayload, sizeof(bufferPayload), "%d,%d,%d", (shelfData[light].color >> 16) & 0xff, (shelfData[light].color >> 8) & 0xff, shelfData[light].color & 0xff);
     mqttClient.publish(bufferTopic, bufferPayload);
     snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/effect", light+1);
-    mqttClient.publish(bufferTopic, shelfData[light].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : "Solid");
+    mqttClient.publish(bufferTopic, shelfData[light].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : shelfData[light].effect == LIGHT_EFFECT_HENRY ? "Henry" : "Solid");
 }
 
 void mqttConnect()
@@ -223,6 +239,33 @@ void connectToNetwork()
 
     if (WiFi.status() == WL_CONNECTED)
         infoLog->println("Connected to WiFi");
+}
+
+void fadeyShelfy(uint8_t shelf)
+{
+    uint32_t targetColor = shelfData[shelf].color;
+    uint8_t targetR = (targetColor >> 16) & 0xff; // red
+    uint8_t targetG = (targetColor >> 8) & 0xff; // green
+    uint8_t targetB = targetColor & 0xff; // blue
+
+    for (int j = 0; j < shelfData[shelf].numLeds; j++)
+    {
+        uint32_t currentColor = shelves[shelf].getPixelColor(j);
+        if (currentColor != targetColor)
+        {
+            uint8_t currentR = (currentColor >> 16) & 0xff; // red
+            uint8_t currentG = (currentColor >> 8) & 0xff; // green
+            uint8_t currentB = currentColor & 0xff; // blue
+
+            targetR = currentR >= targetR+5 ? currentR-5 : (currentR <= targetR-5 ? currentR+5 : targetR);
+            targetG = currentG >= targetG+5 ? currentG-5 : (currentG <= targetG-5 ? currentG+5 : targetG);
+            targetB = currentB >= targetB+5 ? currentB-5 : (currentB <= targetB-5 ? currentB+5 : targetB);
+
+            targetColor = shelves[shelf].Color(targetR, targetG, targetB);
+
+            shelves[shelf].setPixelColor(j, targetColor);
+        }
+    }
 }
 
 void setup()
@@ -356,10 +399,13 @@ void loop()
                 shelfData[i].brightness = 0;
                 shelves[i].begin();
                 shelves[i].clear();
+                //shelves[i].fill(shelfData[i].color, 0, shelves[i].numPixels());
+                        
                 if (i == 5)
                 {
-                    shelves[i+1].begin();
-                    shelves[i+1].clear();
+                    shelves[6].begin();
+                    shelves[6].clear();
+                    //shelves[i+1].fill(shelfData[i].color, 0, shelves[i+1].numPixels());
                 }
             }
 
@@ -374,9 +420,7 @@ void loop()
                 
                 shelves[i].setBrightness(shelfData[i].brightness);
                 if (i == 5)
-                {
                     shelves[i+1].setBrightness(shelfData[i].brightness);
-                }
             }
             else if (!shelfData[i].enabled && shelfData[i].brightness != 0)
             {
@@ -396,9 +440,7 @@ void loop()
             }
 
             if (shelfData[i].effect == LIGHT_EFFECT_RAINBOW)
-            {
-                //shelves[i].rainbow(index, 1);
-                
+            {                
                 uint8_t saturation = 255;
                 uint8_t brightness = 255;
                 uint8_t numLeds;
@@ -424,14 +466,73 @@ void loop()
                 }
                 
             }
-            else if (shelfData[i].effect == LIGHT_EFFECT_TWINKLE)
+            else if (shelfData[i].effect == LIGHT_EFFECT_HENRY)
             {
+                if (i < 5 && HenryLedNumber < shelfData[i].numLeds)
+                {
+                    shelves[i].setPixelColor(HenryLedNumber, HenryColorOrBlack ? HenryColors[HenryColor] : 0);
+
+                    if (i == 5)
+                        shelves[i+1].setPixelColor(HenryLedNumber, HenryColorOrBlack ? HenryColors[HenryColor] : 0);
+                }
+                else if (i == 5 && HenryLedNumber < shelfData[i].numLeds + shelfData[i+1].numLeds)
+                {
+                    if (HenryLedNumber < shelves[i].numPixels())
+                        shelves[i].setPixelColor((shelves[i].numPixels()-1) - HenryLedNumber, HenryColorOrBlack ? HenryColors[HenryColor] : 0);
+                    else
+                        shelves[i+1].setPixelColor(HenryLedNumber - shelves[i].numPixels(), HenryColorOrBlack ? HenryColors[HenryColor] : 0);
+                }
+
+                if (i == 5)
+                {
+                    if (HenryLedNumber >= 96)
+                    {
+                        HenryLedNumber = 0;
+                        HenryColorOrBlack = !HenryColorOrBlack;
+                        if (!HenryColorOrBlack)
+                            HenryColor = HenryColor == 4 ? 0 : HenryColor + 1;
+                    }
+                    else
+                    {
+                        HenryLedNumber++;
+                    }
+                }
             }
             else if (shelfData[i].effect == LIGHT_EFFECT_SOLID)
             {
+                fadeyShelfy(i);
+                if (i == 5)
+                    fadeyShelfy(6);
+
+                /*
+                if (shelves[i].getPixelColor(0) != shelfData[i].color)
+                {
+                    uint32_t targetColor;
+
+                    uint8_t targetR = (shelfData[i].color >> 16) & 0xff; // red
+                    uint8_t targetG = (shelfData[i].color >> 8) & 0xff; // green
+                    uint8_t targetB = shelfData[i].color & 0xff; // blue
+
+                    uint8_t currentR = (shelves[i].getPixelColor(0) >> 16) & 0xff; // red
+                    uint8_t currentG = (shelves[i].getPixelColor(0) >> 8) & 0xff; // green
+                    uint8_t currentB = shelves[i].getPixelColor(0) & 0xff; // blue
+
+                    targetR = currentR > targetR+1 ? currentR-2 : (currentR < targetR-1 ? currentR+2 : targetR);
+                    targetG = currentG > targetG+1 ? currentG-2 : (currentG < targetG-1 ? currentG+2 : targetG);
+                    targetB = currentB > targetB+1 ? currentB-2 : (currentB < targetB-1 ? currentB+2 : targetB);
+
+                    targetColor = shelves[i].Color(targetR, targetG, targetB);
+
+                    shelves[i].fill(targetColor, 0, shelves[i].numPixels());
+                    if (i == 5)
+                        shelves[i+1].fill(targetColor, 0, shelves[i+1].numPixels());
+                }
+                */
+                /*
                 shelves[i].fill(shelfData[i].color, 0, shelves[i].numPixels());
                 if (i == 5)
                     shelves[i+1].fill(shelfData[i].color, 0, shelves[i+1].numPixels());
+                */
             }
             shelves[i].show();
             if (i == 5)
