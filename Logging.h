@@ -4,13 +4,19 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
+#ifdef ESP32
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#endif
+
 #define SYSLOG_SERVER   "lb.home.cooper.uk";
 #define SYSLOG_PORT     514
-#define APP_NAME        "FrontShelfController"
+#define APP_NAME        "FrontShelfController-ESP32"
+
 /*
     User-Level Severity
-	Emergency   Alert   Critical    Error   Warning Notice  Info    Debug
-    8           9       10          11      12      13      14      15
+	Emergency   Alert       Critical    Error       Warning     Notice      Info        Debug
+    8           9           10          11          12          13          14          15
 */
 
 class TLog : public Print
@@ -23,10 +29,13 @@ public:
     void setup()
     {
         Serial.begin(115200);
-        strcpy(_macAddress, WiFi.macAddress().c_str());
-
-        if (!syslog.begin(_syslogPort))
-            Serial.println("syslog.begin error");
+        
+        #ifdef ESP32
+        uint8_t chipid[6];
+        esp_read_mac(chipid, ESP_MAC_WIFI_STA);
+        sprintf(_macAddress, "%02x:%02x:%02x:%02x:%02x:%02x",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
+        #else
+        #endif
     }
     void disableSerial(bool onoff) { _disableSerial = onoff; };
     void disableSyslog(bool onoff) { _disableSyslog = onoff; };
@@ -71,8 +80,7 @@ private:
             logbuff[at++] = 0;
             at = 0;
 
-
-            syslog.beginPacket(IPAddress(192, 168, 16, 100), _syslogPort);
+            syslog.beginPacket(_syslogDest, _syslogPort);
             syslog.printf("<%d>1 - %s %s - - - %s", s, _macAddress, _appName, logbuff);
             syslog.endPacket();
         };

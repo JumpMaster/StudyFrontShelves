@@ -1,5 +1,9 @@
-#include "studyfrontshelves.h"
+#define DIAGNOSTIC_PIXEL_PIN  33
+#define DIAGNOSTIC_LED_PIN  13
 
+#include "StandardFeatures.h"
+#include "studyfrontshelves.h"
+/*
 void connectToNetwork()
 {
     WiFi.mode(WIFI_STA);
@@ -8,7 +12,7 @@ void connectToNetwork()
     if (WiFi.waitForConnectResult() == WL_CONNECTED && wifiReconnectCount == 0)
         Log.println("Connected to WiFi");
 }
-
+*/
 void buildLedMapping()
 {
     for (uint16_t i = 0; i < stripData[0].numLeds; i++)
@@ -32,53 +36,33 @@ void buildLedMapping()
     for (uint16_t i = 0; i < (stripData[5].numLeds-35); i++)
         stripMapping[5][35+i] = i;
 }
-
+/*
 void setupOTA()
 {
-    // Port defaults to 8266
-    // ArduinoOTA.setPort(8266);
-
-    // Hostname defaults to esp8266-[ChipID]
     ArduinoOTA.setHostname(deviceName);
-
-    // No authentication by default
-    // ArduinoOTA.setPassword("admin");
-
-    // Password can be set with it's md5 value as well
-    // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-    // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-
+  
     ArduinoOTA.onStart([]()
     {
-        String type;
-        if (ArduinoOTA.getCommand() == U_FLASH)
-        {
-            type = "sketch";
-        }
-        else
-        {  // U_FS
-            type = "filesystem";
-        }
-
-        // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-        Log.printf("Start updating %s\n", type);
-        otaUpdating = true;
+        Log.println("OTA Start");
+        #ifdef DIAGNOSTIC_PIXEL_PIN
+        diagnosticPixel.setPixelColor(0, NEOPIXEL_WHITE);
+        diagnosticPixel.setBrightness(diagnosticPixelMaxBrightness);
+        diagnosticPixel.show();
+        #endif
     });
-/* 
+
     ArduinoOTA.onEnd([]()
     {
-        Log.println("\nEnd");
+        Log.println("OTA End");
     });
 
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
     {
-        Log.printf("Progress: %u%%\r", (progress / (total / 100)));
     });
-*/
+
     ArduinoOTA.onError([](ota_error_t error)
     {
-        otaUpdating = false;
-        Log.printf("Error[%u]: ", error);
+        Serial.printf("Error[%u]: ", error);
         if (error == OTA_AUTH_ERROR)
         {
             Log.println("Auth Failed");
@@ -100,23 +84,17 @@ void setupOTA()
             Log.println("End Failed");
         }
     });
-
+    
     ArduinoOTA.begin();
 }
 
 void setupMQTT()
 {
-    /*
-    mqttPowerButton.addConfigVar("device", deviceConfig);
-    mqttPowerState.addConfigVar("device", deviceConfig);
-    mqttParentalMode.addConfigVar("device", deviceConfig);
-    */
-
     mqttClient.setBufferSize(4096);
     mqttClient.setServer(mqtt_server, 1883);
     mqttClient.setCallback(mqttCallback);
 }
-
+*/
 void mqttCallback(char* topic, byte* payload, unsigned int length)
 {
     char p[length + 1];
@@ -215,7 +193,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
         mqttClient.publish(bufferTopic, stripData[strip].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : stripData[strip].effect == LIGHT_EFFECT_HENRY ? "Henry" : "Solid");
     }
 }
-
+/*
 void mqttConnect()
 {
     Log.println("Connecting to MQTT");
@@ -265,31 +243,32 @@ void manageMQTT()
 
 void sendTelegrafMetrics()
 {
-    uint32_t uptime = rp2040.getCycleCount64() / F_CPU; //133000000L;
+    if (millis() > nextMetricsUpdate)
+    {
+        nextMetricsUpdate = millis() + 30000;
+        uint32_t uptime = esp_timer_get_time() / 1000000;
 
-    char buffer[150];
-
-    snprintf(buffer, sizeof(buffer),
-        "status,device=%s uptime=%ld,memUsed=%ld,memTotal=%ld,firmware=\"%s\"",
-        deviceName,
-        uptime,
-        rp2040.getUsedHeap(),
-        rp2040.getTotalHeap(),
-        ARDUINO_PICO_VERSION_STR);
-    mqttClient.publish("telegraf/particle", buffer);
+        char buffer[150];
+        snprintf(buffer, sizeof(buffer),
+            "status,device=%s uptime=%d,resetReason=%d,firmware=\"%s\",memUsed=%ld,memTotal=%ld",
+            deviceName,
+            uptime,
+            esp_reset_reason(),
+            esp_get_idf_version(),
+            (ESP.getHeapSize()-ESP.getFreeHeap()),
+            ESP.getHeapSize());
+        mqttClient.publish("telegraf/particle", buffer);
+    }
 }
 
 void manageOnboardLED()
 {
-    if (startupComplete)
+    if (millis() < nextOnboardLedUpdate)
         return;
 
-    // TURN OFF ONBOARD LED ONCE UPTIME IS GREATER THEN 5 SECONDS
-    if (millis() > 5000)
-    {
-        digitalWrite(ONBOARD_LED_PIN, LOW);
-        startupComplete = true;
-    }
+    nextOnboardLedUpdate = millis() + 1000;
+    onboardLedState = !onboardLedState;
+    digitalWrite(ONBOARD_LED_PIN, onboardLedState ? HIGH : LOW);
 }
 
 void manageWiFi()
@@ -299,7 +278,7 @@ void manageWiFi()
     {
         if (wifiReconnectCount >= 10)
         {
-            rp2040.restart();
+            ESP.restart();
         }
         
         wifiReconnectCount++;
@@ -314,11 +293,11 @@ void manageWiFi()
         }
         else
         {
-          wifiReconnectPreviousMillis = millis();
+            wifiReconnectPreviousMillis = millis();
         }
     }
 }
-
+*/
 void managePSU()
 {
     if (psuShouldBeEnabled && !psuReady)
@@ -327,6 +306,7 @@ void managePSU()
         {
             digitalWrite(relayPin, HIGH);
             psuEnabled = true;
+            diagnosticPixelColor2 = NEOPIXEL_MAGENTA;
             psuReady = false;
             psuActionableTime = millis() + psuStartupBuffer;
         }
@@ -349,6 +329,7 @@ void managePSU()
             digitalWrite(relayPin, LOW);
             psuReady = false;
             psuEnabled = false;
+            diagnosticPixelColor2 = NEOPIXEL_BLACK;
         }
     }
 
@@ -416,7 +397,6 @@ void manageLeds()
 
     indexHue += lightSpeed;
 
-
     for (uint8_t strip = 0; strip < logicalStrips; strip++)
     {
         if (!stripData[strip].enabled && !stripData[strip].active && stripData[strip].brightness == 0)
@@ -435,15 +415,6 @@ void manageLeds()
         {
             if (strip == 0)
             {
-                /*
-                if (stripData[strip].brightness <= (stripData[strip].targetBrightness-5))
-                    stripData[strip].brightness += 5;
-                else if (stripData[strip].targetBrightness <= (stripData[strip].brightness-5))
-                    stripData[strip].brightness -= 5;
-                else
-                    stripData[strip].brightness = stripData[strip].targetBrightness;
-                */
-
                 if (stripData[strip].brightness < stripData[strip].targetBrightness)
                     stripData[strip].brightness++;
                 else if (stripData[strip].targetBrightness < stripData[strip].brightness)
@@ -513,36 +484,60 @@ void manageLeds()
     nextLedUpdate = millis() + (1000 / targetFPS);
 }
 
+void manageLocalMQTT()
+{
+    if (mqttClient.connected() && mqttReconnected)
+    {
+        mqttReconnected = false;
+
+        mqttClient.subscribe("home/study/light/front-shelf/+/+/set");
+        mqttClient.subscribe("home/study/light/front-shelf/speed/set");
+        
+        char buffer[40];
+        for (int i = 0; i < logicalStrips; i++)
+        {
+            snprintf(buffer, sizeof(buffer), "home/study/light/front-shelf/%d/switch", i+1);
+            mqttClient.publish(buffer, stripData[i].enabled ? "ON" : "OFF");
+        }
+        std::string s = std::to_string(lightSpeed);
+        mqttClient.publish("home/study/light/front-shelf/speed/state", s.c_str());
+    }
+}
+
 void setup()
 {
+    StandardSetup();
+
+    mqttClient.setCallback(mqttCallback);
+    /*
     pinMode(ONBOARD_LED_PIN, OUTPUT);
-    pinMode(relayPin, OUTPUT);
-    digitalWrite(relayPin, LOW);
     digitalWrite(ONBOARD_LED_PIN, HIGH);
 
+    pinMode(relayPin, OUTPUT);
+    digitalWrite(relayPin, LOW);
+
     Log.setup();
+
+    setupDiagnosticPixel();
     
     connectToNetwork();
-
-    buildLedMapping();
-
-    if (!leds.begin()) {
-        // Blink the onboard LED if that happens.
-        pinMode(LED_BUILTIN, OUTPUT);
-        for (;;) digitalWrite(LED_BUILTIN, (millis() / 500) & 1);
-    }
 
     setupOTA();
 
     setupMQTT();
+    */
+    buildLedMapping();
+
+    leds.begin();
 }
 
 void loop()
 {
-    ArduinoOTA.handle();
+    StandardLoop();
 
-    if (otaUpdating)
-        return;
+    manageLocalMQTT();
+/*
+    ArduinoOTA.handle();
 
     manageWiFi();
 
@@ -550,6 +545,8 @@ void loop()
 
     manageOnboardLED();
 
+    manageDiagnosticPixel();
+*/
     managePSU();
 
     manageLeds();
