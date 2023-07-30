@@ -1,110 +1,120 @@
-#include <ArduinoOTA.h>
-#include <Adafruit_NeoPixel.h>
-#include <PubSubClient.h>
-#include "PapertrailLogger.h"
-#include "secrets.h"
+#include "studyfrontshelves.h"
 
-// Stubs
-void mqttCallback(char* topic, byte* payload, unsigned int length);
-uint32_t Wheel(byte WheelPos);
-//void RainbowCycleUpdate(Adafruit_NeoPixel *pixels, uint8_t index);
-
-bool isDebug = false;
-
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
-unsigned long wifiReconnectPreviousMillis = 0;
-unsigned long wifiReconnectInterval = 30000;
-
-PapertrailLogger *infoLog;
-
-const gpio_num_t relayPin = GPIO_NUM_26;
-
-const uint8_t fps = 120;
-uint32_t nextRun = 0;
-
-bool showFPS = false;
-uint32_t nextFPSCount;
-uint32_t fpsCount;
-
-typedef enum
+void connectToNetwork()
 {
-    LIGHT_EFFECT_SOLID = 0,
-    LIGHT_EFFECT_RAINBOW = 1,
-    LIGHT_EFFECT_HENRY = 2,
-} LightEffect;
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(wifiSSID, wifiPassword);
 
-struct ShelfData
-{
-    const gpio_num_t dataPin;
-    const uint8_t numLeds;
-    bool enabled;
-    bool active;
-    uint8_t effect;
-    uint8_t targetBrightness;
-    uint8_t brightness;
-    uint32_t color;
-};
-
-const uint8_t shelfCount = 7;
-
-ShelfData shelfData[shelfCount] =
-{
-    { GPIO_NUM_14, 95, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
-    { GPIO_NUM_32, 95, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
-    { GPIO_NUM_15, 96, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
-    { GPIO_NUM_33, 82, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
-    { GPIO_NUM_27, 82, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
-    { GPIO_NUM_12, 35, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
-    { GPIO_NUM_13, 40, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215}
-};
-
-Adafruit_NeoPixel shelves[shelfCount] =
-{
-    Adafruit_NeoPixel(shelfData[0].numLeds, shelfData[0].dataPin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[1].numLeds, shelfData[1].dataPin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[2].numLeds, shelfData[2].dataPin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[3].numLeds, shelfData[3].dataPin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[4].numLeds, shelfData[4].dataPin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[5].numLeds, shelfData[5].dataPin, NEO_RGB + NEO_KHZ800),
-    Adafruit_NeoPixel(shelfData[6].numLeds, shelfData[6].dataPin, NEO_RGB + NEO_KHZ800)
-};
-
-                // RED, YELLOW, GREEN, BLUE, PURPLE
-const uint32_t HenryColors[] = {16711680, 16776960, 65280, 255, 16711935};
-uint8_t HenryColor = 0;
-bool HenryColorOrBlack = false;
-uint8_t HenryLedNumber = 0;
-
-bool psuShouldBeEnabled = false;
-bool psuEnabled = false;
-bool psuReady = false;
-uint32_t psuActionableTime = 0;
-const uint16_t psuShutdownBuffer = 10000;
-const uint16_t psuStartupBuffer = 100;
-
-uint32_t nextMetricsUpdate = 0;
-
-uint32_t getMillis()
-{
-    return esp_timer_get_time() / 1000;
+    if (WiFi.waitForConnectResult() == WL_CONNECTED && wifiReconnectCount == 0)
+        Log.println("Connected to WiFi");
 }
 
-void sendTelegrafMetrics()
+void buildLedMapping()
 {
-    uint32_t uptime = getMillis() / 1000;
+    for (uint16_t i = 0; i < stripData[0].numLeds; i++)
+        stripMapping[0][i] = (NUM_LEDS * 6) + i;
 
-    char buffer[150];
+    for (uint16_t i = 0; i < stripData[1].numLeds; i++)
+        stripMapping[1][i] = (NUM_LEDS * 5) + i;
 
-    snprintf(buffer, sizeof(buffer),
-        "status,device=%s uptime=%d,resetReason=%d,firmware=\"%s\",memUsed=%ld,memTotal=%ld",
-        deviceName,
-        uptime,
-        esp_reset_reason(),
-        esp_get_idf_version(),
-        ESP.getHeapSize()-ESP.getFreeHeap(),
-        ESP.getHeapSize());
-    mqttClient.publish("telegraf/particle", buffer);
+    for (uint16_t i = 0; i < stripData[2].numLeds; i++)
+        stripMapping[2][i] = (NUM_LEDS * 4) + i;
+    
+    for (uint16_t i = 0; i < stripData[3].numLeds; i++)
+        stripMapping[3][i] = (NUM_LEDS * 3) + i;
+    
+    for (uint16_t i = 0; i < stripData[4].numLeds; i++)
+        stripMapping[4][i] = (NUM_LEDS * 2) + i;
+
+    for (uint16_t i = 0; i < 35; i++)
+        stripMapping[5][i] = (NUM_LEDS + 35) - i;
+
+    for (uint16_t i = 0; i < (stripData[5].numLeds-35); i++)
+        stripMapping[5][35+i] = i;
+}
+
+void setupOTA()
+{
+    // Port defaults to 8266
+    // ArduinoOTA.setPort(8266);
+
+    // Hostname defaults to esp8266-[ChipID]
+    ArduinoOTA.setHostname(deviceName);
+
+    // No authentication by default
+    // ArduinoOTA.setPassword("admin");
+
+    // Password can be set with it's md5 value as well
+    // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
+    // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+
+    ArduinoOTA.onStart([]()
+    {
+        String type;
+        if (ArduinoOTA.getCommand() == U_FLASH)
+        {
+            type = "sketch";
+        }
+        else
+        {  // U_FS
+            type = "filesystem";
+        }
+
+        // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+        Log.printf("Start updating %s\n", type);
+        otaUpdating = true;
+    });
+/* 
+    ArduinoOTA.onEnd([]()
+    {
+        Log.println("\nEnd");
+    });
+
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+    {
+        Log.printf("Progress: %u%%\r", (progress / (total / 100)));
+    });
+*/
+    ArduinoOTA.onError([](ota_error_t error)
+    {
+        otaUpdating = false;
+        Log.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR)
+        {
+            Log.println("Auth Failed");
+        }
+        else if (error == OTA_BEGIN_ERROR)
+        {
+            Log.println("Begin Failed");
+        }
+        else if (error == OTA_CONNECT_ERROR)
+        {
+            Log.println("Connect Failed");
+        }
+        else if (error == OTA_RECEIVE_ERROR)
+        {
+            Log.println("Receive Failed");
+        }
+        else if (error == OTA_END_ERROR)
+        {
+            Log.println("End Failed");
+        }
+    });
+
+    ArduinoOTA.begin();
+}
+
+void setupMQTT()
+{
+    /*
+    mqttPowerButton.addConfigVar("device", deviceConfig);
+    mqttPowerState.addConfigVar("device", deviceConfig);
+    mqttParentalMode.addConfigVar("device", deviceConfig);
+    */
+
+    mqttClient.setBufferSize(4096);
+    mqttClient.setServer(mqtt_server, 1883);
+    mqttClient.setCallback(mqttCallback);
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length)
@@ -118,236 +128,209 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     {
         char buffer[100];
         snprintf(buffer, 100, "%s - %s", topic, p);
-        infoLog->println(buffer);
+        Log.println(buffer);
     }
 
-    uint8_t topicLen = strlen(topic);
-
-    char command[11];
-    memcpy(command, &topic[31], topicLen-35);
-    command[topicLen-35] = '\0';
-
-    int8_t light = -1;
-    if (strlen(topic) > 29 && strncmp(topic, "home/study/light/front-shelf/", 29) == 0) 
+    if (strlen(topic) == 38 && strncmp(topic, "home/study/light/front-shelf/speed/set", 38) == 0)
     {
-        light = topic[29] - '0' - 1;
+        lightSpeed = atoi( p );
+        mqttClient.publish("home/study/light/front-shelf/speed/state", p, true);
     }
-
-    if (light < 0)
-        return;
-
-    if (strcmp(command, "switch") == 0)
+    else
     {
-        bool state = strcmp(p, "ON") == 0;
+        uint8_t topicLen = strlen(topic);
 
-        if (shelfData[light].enabled == state)
-            return;
-        else
-            shelfData[light].enabled = state;
-    
-        bool psuEnabledCheck = false;
-        for (uint8_t i = 0; i < shelfCount; i++) {
-            if (shelfData[i].enabled)
-                psuEnabledCheck = true;
-        }
-        psuShouldBeEnabled = psuEnabledCheck;
-    }
-    else if (strcmp(command, "brightness") == 0)
-    {
-        uint8_t brightness;
-        sscanf(p, "%d", &brightness);
-        shelfData[light].targetBrightness = brightness;
-    }
-    else if (strcmp(command, "rgb") == 0)
-    {
-        char * token = strtok(p, ",");
+        char command[11];
+        memcpy(command, &topic[31], topicLen-35);
+        command[topicLen-35] = '\0';
 
-        uint8_t c[3];
-        for (int i = 0; i < 3; i++) {
-            c[i] = atoi(token);
-            token = strtok(NULL, ",");
-        }
-        shelfData[light].color = (c[0] << 16) | (c[1] << 8) | c[2];
-        if (light == 5) { shelfData[6].color = shelfData[5].color; }
-    }
-    else if (strcmp(command, "effect") == 0)
-    {
-        if (strcmp(p, "Rainbow") == 0)
-            shelfData[light].effect = LIGHT_EFFECT_RAINBOW;
-        else if (strcmp(p, "Henry") == 0)
+        int8_t strip = -1;
+        if (strlen(topic) > 29 && strncmp(topic, "home/study/light/front-shelf/", 29) == 0) 
         {
-            shelfData[light].effect = LIGHT_EFFECT_HENRY;
-            HenryColor = 0;
-            HenryColorOrBlack = false;
-            HenryLedNumber = 0;
+            strip = topic[29] - '0' - 1;
         }
-        else
-            shelfData[light].effect = LIGHT_EFFECT_SOLID;
-    }
 
-    char bufferTopic[50];
-    char bufferPayload[15];
-    snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/switch", light+1);
-    mqttClient.publish(bufferTopic, shelfData[light].enabled ? "ON" : "OFF");
-    snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/brightness", light+1);
-    snprintf(bufferPayload, sizeof(bufferPayload), "%d", shelfData[light].targetBrightness);
-    mqttClient.publish(bufferTopic, bufferPayload);
-    snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/rgb", light+1);
-    snprintf(bufferPayload, sizeof(bufferPayload), "%d,%d,%d", (shelfData[light].color >> 16) & 0xff, (shelfData[light].color >> 8) & 0xff, shelfData[light].color & 0xff);
-    mqttClient.publish(bufferTopic, bufferPayload);
-    snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/effect", light+1);
-    mqttClient.publish(bufferTopic, shelfData[light].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : shelfData[light].effect == LIGHT_EFFECT_HENRY ? "Henry" : "Solid");
+        if (strip < 0)
+            return;
+
+        if (strcmp(command, "switch") == 0)
+        {
+            bool state = strcmp(p, "ON") == 0;
+
+            if (stripData[strip].enabled == state)
+                return;
+            else
+                stripData[strip].enabled = state;
+        
+            bool psuEnabledCheck = false;
+            for (uint8_t i = 0; i < logicalStrips; i++) {
+                if (stripData[i].enabled)
+                    psuEnabledCheck = true;
+            }
+            psuShouldBeEnabled = psuEnabledCheck;
+        }
+        else if (strcmp(command, "brightness") == 0)
+        {
+            uint8_t brightness;
+            sscanf(p, "%d", &brightness);
+            stripData[strip].targetBrightness = brightness;
+        }
+        else if (strcmp(command, "rgb") == 0)
+        {
+            char * token = strtok(p, ",");
+
+            uint8_t c[3];
+            for (int i = 0; i < 3; i++) {
+                c[i] = atoi(token);
+                token = strtok(NULL, ",");
+            }
+            stripData[strip].color = (c[0] << 16) | (c[1] << 8) | c[2];
+        }
+        else if (strcmp(command, "effect") == 0)
+        {
+            if (strcmp(p, "Rainbow") == 0)
+                stripData[strip].effect = LIGHT_EFFECT_RAINBOW;
+            else if (strcmp(p, "Henry") == 0)
+            {
+                stripData[strip].effect = LIGHT_EFFECT_HENRY;
+                HenryColor = 0;
+                HenryColorOrBlack = false;
+                HenryLedNumber = 0;
+            }
+            else
+                stripData[strip].effect = LIGHT_EFFECT_SOLID;
+        }
+
+        char bufferTopic[50];
+        char bufferPayload[15];
+        snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/switch", strip+1);
+        mqttClient.publish(bufferTopic, stripData[strip].enabled ? "ON" : "OFF");
+        snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/brightness", strip+1);
+        snprintf(bufferPayload, sizeof(bufferPayload), "%d", stripData[strip].targetBrightness);
+        mqttClient.publish(bufferTopic, bufferPayload);
+        snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/rgb", strip+1);
+        snprintf(bufferPayload, sizeof(bufferPayload), "%d,%d,%d", (stripData[strip].color >> 16) & 0xff, (stripData[strip].color >> 8) & 0xff, stripData[strip].color & 0xff);
+        mqttClient.publish(bufferTopic, bufferPayload);
+        snprintf(bufferTopic, sizeof(bufferTopic), "home/study/light/front-shelf/%d/effect", strip+1);
+        mqttClient.publish(bufferTopic, stripData[strip].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : stripData[strip].effect == LIGHT_EFFECT_HENRY ? "Henry" : "Solid");
+    }
 }
 
 void mqttConnect()
 {
-    // Loop until we're reconnected
-    while (!mqttClient.connected())
+    Log.println("Connecting to MQTT");
+    // Attempt to connect
+    if (mqttClient.connect(deviceName, mqtt_username, mqtt_password))
     {
-        infoLog->println("Connecting to MQTT");
-        // Attempt to connect
-        if (mqttClient.connect(deviceName, mqtt_username, mqtt_password))
+        Log.println("Connected to MQTT");
+        nextMqttConnectAttempt = 0;
+
+        mqttClient.subscribe("home/study/light/front-shelf/+/+/set");
+        mqttClient.subscribe("home/study/light/front-shelf/speed/set");
+        
+        char buffer[40];
+        for (int i = 0; i < logicalStrips; i++)
         {
-            infoLog->println("Connected to MQTT");
-
-            mqttClient.subscribe("home/study/light/front-shelf/+/+/set");
-            
-            char buffer[40];
-            for (int i = 0; i < shelfCount; i++)
-            {
-                snprintf(buffer, sizeof(buffer), "home/study/light/front-shelf/%d/switch", i+1);
-                mqttClient.publish(buffer, shelfData[i].enabled ? "ON" : "OFF");
-            }
+            snprintf(buffer, sizeof(buffer), "home/study/light/front-shelf/%d/switch", i+1);
+            mqttClient.publish(buffer, stripData[i].enabled ? "ON" : "OFF");
         }
-        else
-        {
-            infoLog->println("Failed to connect to MQTT");
-            // Wait 5 seconds before retrying
-            delay(5000);
-        }
-    }
-}
-
-void connectToNetwork()
-{
-    WiFi.begin(ssid, password);
- 
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        delay(1000);
-    }
-
-    if (WiFi.status() == WL_CONNECTED)
-        infoLog->println("Connected to WiFi");
-}
-
-void fadeyShelfy(uint8_t shelf)
-{
-    uint32_t targetColor = shelfData[shelf].color;
-    uint8_t targetR = (targetColor >> 16) & 0xff; // red
-    uint8_t targetG = (targetColor >> 8) & 0xff; // green
-    uint8_t targetB = targetColor & 0xff; // blue
-
-    for (int j = 0; j < shelfData[shelf].numLeds; j++)
-    {
-        uint32_t currentColor = shelves[shelf].getPixelColor(j);
-        if (currentColor != targetColor)
-        {
-            uint8_t currentR = (currentColor >> 16) & 0xff; // red
-            uint8_t currentG = (currentColor >> 8) & 0xff; // green
-            uint8_t currentB = currentColor & 0xff; // blue
-
-            targetR = currentR >= targetR+5 ? currentR-5 : (currentR <= targetR-5 ? currentR+5 : targetR);
-            targetG = currentG >= targetG+5 ? currentG-5 : (currentG <= targetG-5 ? currentG+5 : targetG);
-            targetB = currentB >= targetB+5 ? currentB-5 : (currentB <= targetB-5 ? currentB+5 : targetB);
-
-            targetColor = shelves[shelf].Color(targetR, targetG, targetB);
-
-            shelves[shelf].setPixelColor(j, targetColor);
-        }
-    }
-}
-
-void setup()
-{
-    gpio_set_direction(relayPin, GPIO_MODE_OUTPUT); // RELAY
-
-    for (uint8_t i =0; i < shelfCount; i++)
-        gpio_set_direction(shelfData[0].dataPin, GPIO_MODE_OUTPUT);
-
-    gpio_set_level(relayPin, LOW); // LOW = OFF, HIGH = ON
-
-    uint8_t chipid[6];
-    esp_read_mac(chipid, ESP_MAC_WIFI_STA);
-    char macAddress[19];
-    sprintf(macAddress, "%02x:%02x:%02x:%02x:%02x:%02x",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
-
-    infoLog = new PapertrailLogger(papertrailAddress, papertrailPort, LogLevel::Info, macAddress, deviceName);
-
-    connectToNetwork();
-
-    // ArduinoOTA.begin(WiFi.localIP(), "Arduino", "password", InternalStorage);
-    ArduinoOTA.setHostname(deviceName);
-    ArduinoOTA.begin();
-
-    mqttClient.setBufferSize(2048);
-
-    mqttClient.setServer(mqtt_server, 1883);
-    mqttClient.setCallback(mqttCallback);
-
-    for (uint8_t i = 0; i < shelfCount; i++)
-    {
-        shelves[i].begin();
-        shelves[i].clear();
-        shelves[i].show();
-    }
-}
-
-void loop()
-{
-    unsigned long currentMillis = getMillis();
-    static uint16_t index;
-    ArduinoOTA.handle();
-
-    if (!mqttClient.connected())
-    {
-        mqttConnect();
+        std::string s = std::to_string(lightSpeed);
+        mqttClient.publish("home/study/light/front-shelf/speed/state", s.c_str());
     }
     else
     {
+        Log.println("Failed to connect to MQTT");
+        nextMqttConnectAttempt = millis() + mqttReconnectInterval;
+    }
+}
+
+void manageMQTT()
+{
+    if (mqttClient.connected())
+    {
         mqttClient.loop();
-        
-        if (currentMillis > nextMetricsUpdate)
+
+        if (millis() > nextMetricsUpdate)
         {
             sendTelegrafMetrics();
-            nextMetricsUpdate = currentMillis + 30000;
+            nextMetricsUpdate = millis() + 30000;
         }
-    }
 
-    // if WiFi is down, try reconnecting
-    if ((WiFi.status() != WL_CONNECTED) && (currentMillis - wifiReconnectPreviousMillis >= wifiReconnectInterval))
+    }
+    else if (millis() > nextMqttConnectAttempt)
     {
-        Serial.print(currentMillis);
-        Serial.println("Reconnecting to WiFi...");
-        WiFi.disconnect();
-        WiFi.reconnect();
+        mqttConnect();
+    }
+}
+
+void sendTelegrafMetrics()
+{
+    uint32_t uptime = rp2040.getCycleCount64() / F_CPU; //133000000L;
+
+    char buffer[150];
+
+    snprintf(buffer, sizeof(buffer),
+        "status,device=%s uptime=%ld,memUsed=%ld,memTotal=%ld,firmware=\"%s\"",
+        deviceName,
+        uptime,
+        rp2040.getUsedHeap(),
+        rp2040.getTotalHeap(),
+        ARDUINO_PICO_VERSION_STR);
+    mqttClient.publish("telegraf/particle", buffer);
+}
+
+void manageOnboardLED()
+{
+    if (startupComplete)
+        return;
+
+    // TURN OFF ONBOARD LED ONCE UPTIME IS GREATER THEN 5 SECONDS
+    if (millis() > 5000)
+    {
+        digitalWrite(ONBOARD_LED_PIN, LOW);
+        startupComplete = true;
+    }
+}
+
+void manageWiFi()
+{
+    // if WiFi is down, try reconnecting
+    if ((WiFi.status() != WL_CONNECTED) && (millis() - wifiReconnectPreviousMillis >= wifiReconnectInterval))
+    {
+        if (wifiReconnectCount >= 10)
+        {
+            rp2040.restart();
+        }
+        
+        wifiReconnectCount++;
+
+        connectToNetwork();
 
         if (WiFi.status() == WL_CONNECTED)
-            infoLog->println("Reconnected to WiFi");
-
-        wifiReconnectPreviousMillis = currentMillis;
+        {
+            wifiReconnectCount = 0;
+            wifiReconnectPreviousMillis = 0;
+            Log.println("Reconnected to WiFi");
+        }
+        else
+        {
+          wifiReconnectPreviousMillis = millis();
+        }
     }
-    
+}
+
+void managePSU()
+{
     if (psuShouldBeEnabled && !psuReady)
     {
         if (!psuEnabled)
         {
-            gpio_set_level(relayPin, HIGH); // LOW = OFF, HIGH = ON
+            digitalWrite(relayPin, HIGH);
             psuEnabled = true;
             psuReady = false;
-            psuActionableTime = currentMillis + psuStartupBuffer;
+            psuActionableTime = millis() + psuStartupBuffer;
         }
-        else if (currentMillis > psuActionableTime)
+        else if (millis() > psuActionableTime)
         {
             psuReady = true;
             psuActionableTime = 0;
@@ -358,12 +341,12 @@ void loop()
     {
         if (psuActionableTime == 0)
         {
-            psuActionableTime = currentMillis + psuShutdownBuffer;
+            psuActionableTime = millis() + psuShutdownBuffer;
         }
-        else if (currentMillis > psuActionableTime)
+        else if (millis() > psuActionableTime)
         {
             psuActionableTime = 0;
-            gpio_set_level(relayPin, LOW); // LOW = OFF, HIGH = ON
+            digitalWrite(relayPin, LOW);
             psuReady = false;
             psuEnabled = false;
         }
@@ -371,173 +354,203 @@ void loop()
 
     if (psuShouldBeEnabled && psuReady && psuActionableTime != 0)
         psuActionableTime = 0;
+}
 
-    if (psuReady && currentMillis > nextRun)
+void fillRainbow(uint16_t first_hue, uint8_t strip)
+{
+    uint8_t saturation = 255;
+    uint8_t brightness = 255;
+
+    for (uint16_t i = 0; i < stripData[strip].numLeds; i++)
     {
-        index += 100; // Keep it moving
-
-        if (showFPS) {
-            fpsCount++;
-
-            if (currentMillis > nextFPSCount) {
-                nextFPSCount = currentMillis + 1000;
-                char buffer[10];
-                snprintf(buffer, 10, "%d", fpsCount);
-                mqttClient.publish("log/fps", buffer);
-                fpsCount = 0;
-            }
-        }
-
-        for (int i = 0; i < shelfCount-1; i++) // shelfCount-1 as I'm bodging a combination of shelves 6 and 7.
-        {
-            if (!shelfData[i].enabled && !shelfData[i].active && shelfData[i].brightness == 0)
-                continue;
-
-            if (shelfData[i].enabled && !shelfData[i].active)
-            {
-                shelfData[i].active = true;
-                shelfData[i].brightness = 0;
-                shelves[i].begin();
-                shelves[i].clear();
-                //shelves[i].fill(shelfData[i].color, 0, shelves[i].numPixels());
-                        
-                if (i == 5)
-                {
-                    shelves[6].begin();
-                    shelves[6].clear();
-                    //shelves[i+1].fill(shelfData[i].color, 0, shelves[i+1].numPixels());
-                }
-            }
-
-            if (shelfData[i].enabled && shelfData[i].brightness != shelfData[i].targetBrightness)
-            {
-                if (shelfData[i].brightness <= (shelfData[i].targetBrightness-5))
-                    shelfData[i].brightness += 5;
-                else if (shelfData[i].targetBrightness <= (shelfData[i].brightness-5))
-                    shelfData[i].brightness -= 5;
-                else
-                    shelfData[i].brightness = shelfData[i].targetBrightness;
-                
-                shelves[i].setBrightness(shelfData[i].brightness);
-                if (i == 5)
-                    shelves[i+1].setBrightness(shelfData[i].brightness);
-            }
-            else if (!shelfData[i].enabled && shelfData[i].brightness != 0)
-            {
-                if (shelfData[i].brightness >= 5)
-                    shelfData[i].brightness -= 5;
-                else
-                    shelfData[i].brightness = 0;
-                shelves[i].setBrightness(shelfData[i].brightness);
-                if (i == 5)
-                {
-                    shelves[i+1].setBrightness(shelfData[i].brightness);
-                }
-            }
-            else if (!shelfData[i].enabled && shelfData[i].brightness == 0 && shelfData[i].active)
-            {
-                shelfData[i].active = false;
-            }
-
-            if (shelfData[i].effect == LIGHT_EFFECT_RAINBOW)
-            {                
-                uint8_t saturation = 255;
-                uint8_t brightness = 255;
-                uint8_t numLeds;
-                numLeds = shelves[i].numPixels();
-                if (i == 5)
-                    numLeds += shelves[i+1].numPixels();
-
-                for (uint16_t j=0; j < numLeds; j++)
-                {
-                    uint16_t hue = index + (j * 65536) / numLeds;
-                    uint32_t color = shelves[i].ColorHSV(hue, saturation, brightness);
-                    color = shelves[i].gamma32(color);
-
-                    if (i == 5)
-                    {
-                        if (j < shelves[i].numPixels())
-                            shelves[i].setPixelColor((shelves[i].numPixels()-1) - j, color);
-                        else
-                            shelves[i+1].setPixelColor(j - shelves[i].numPixels(), color);
-                    }
-                    else
-                        shelves[i].setPixelColor(j, color);
-                }
-                
-            }
-            else if (shelfData[i].effect == LIGHT_EFFECT_HENRY)
-            {
-                if (i < 5 && HenryLedNumber < shelfData[i].numLeds)
-                {
-                    shelves[i].setPixelColor(HenryLedNumber, HenryColorOrBlack ? HenryColors[HenryColor] : 0);
-
-                    if (i == 5)
-                        shelves[i+1].setPixelColor(HenryLedNumber, HenryColorOrBlack ? HenryColors[HenryColor] : 0);
-                }
-                else if (i == 5 && HenryLedNumber < shelfData[i].numLeds + shelfData[i+1].numLeds)
-                {
-                    if (HenryLedNumber < shelves[i].numPixels())
-                        shelves[i].setPixelColor((shelves[i].numPixels()-1) - HenryLedNumber, HenryColorOrBlack ? HenryColors[HenryColor] : 0);
-                    else
-                        shelves[i+1].setPixelColor(HenryLedNumber - shelves[i].numPixels(), HenryColorOrBlack ? HenryColors[HenryColor] : 0);
-                }
-
-                if (i == 5)
-                {
-                    if (HenryLedNumber >= 96)
-                    {
-                        HenryLedNumber = 0;
-                        HenryColorOrBlack = !HenryColorOrBlack;
-                        if (!HenryColorOrBlack)
-                            HenryColor = HenryColor == 4 ? 0 : HenryColor + 1;
-                    }
-                    else
-                    {
-                        HenryLedNumber++;
-                    }
-                }
-            }
-            else if (shelfData[i].effect == LIGHT_EFFECT_SOLID)
-            {
-                fadeyShelfy(i);
-                if (i == 5)
-                    fadeyShelfy(6);
-
-                /*
-                if (shelves[i].getPixelColor(0) != shelfData[i].color)
-                {
-                    uint32_t targetColor;
-
-                    uint8_t targetR = (shelfData[i].color >> 16) & 0xff; // red
-                    uint8_t targetG = (shelfData[i].color >> 8) & 0xff; // green
-                    uint8_t targetB = shelfData[i].color & 0xff; // blue
-
-                    uint8_t currentR = (shelves[i].getPixelColor(0) >> 16) & 0xff; // red
-                    uint8_t currentG = (shelves[i].getPixelColor(0) >> 8) & 0xff; // green
-                    uint8_t currentB = shelves[i].getPixelColor(0) & 0xff; // blue
-
-                    targetR = currentR > targetR+1 ? currentR-2 : (currentR < targetR-1 ? currentR+2 : targetR);
-                    targetG = currentG > targetG+1 ? currentG-2 : (currentG < targetG-1 ? currentG+2 : targetG);
-                    targetB = currentB > targetB+1 ? currentB-2 : (currentB < targetB-1 ? currentB+2 : targetB);
-
-                    targetColor = shelves[i].Color(targetR, targetG, targetB);
-
-                    shelves[i].fill(targetColor, 0, shelves[i].numPixels());
-                    if (i == 5)
-                        shelves[i+1].fill(targetColor, 0, shelves[i+1].numPixels());
-                }
-                */
-                /*
-                shelves[i].fill(shelfData[i].color, 0, shelves[i].numPixels());
-                if (i == 5)
-                    shelves[i+1].fill(shelfData[i].color, 0, shelves[i+1].numPixels());
-                */
-            }
-            shelves[i].show();
-            if (i == 5)
-                shelves[i+1].show();
-        }
-        nextRun = currentMillis + (1000/fps);
+        uint16_t hue = first_hue + (i * 65536) / stripData[strip].numLeds;
+        uint32_t color = leds.ColorHSV(hue, saturation, brightness);
+        color = leds.gamma32(color);
+        leds.setPixelColor(stripMapping[strip][i], color);
     }
+}
+
+void fadeyShelfy(uint8_t strip)
+{
+    uint32_t targetColor = stripData[strip].color;
+    uint8_t targetR = (targetColor >> 16) & 0xff; // red
+    uint8_t targetG = (targetColor >> 8) & 0xff; // green
+    uint8_t targetB = targetColor & 0xff; // blue
+
+    for (int j = 0; j < stripData[strip].numLeds; j++)
+    {
+        uint32_t currentColor = leds.getPixelColor(stripMapping[strip][j]);
+        if (currentColor != targetColor)
+        {
+            uint8_t currentR = (currentColor >> 16) & 0xff; // red
+            uint8_t currentG = (currentColor >> 8) & 0xff; // green
+            uint8_t currentB = currentColor & 0xff; // blue
+
+            targetR = currentR >= targetR+5 ? currentR-5 : (currentR <= targetR-5 ? currentR+5 : targetR);
+            targetG = currentG >= targetG+5 ? currentG-5 : (currentG <= targetG-5 ? currentG+5 : targetG);
+            targetB = currentB >= targetB+5 ? currentB-5 : (currentB <= targetB-5 ? currentB+5 : targetB);
+
+            targetColor = leds.Color(targetR, targetG, targetB);
+
+            leds.setPixelColor(stripMapping[strip][j], targetColor);
+        }
+    }
+}
+
+void manageLeds()
+{
+    if (!psuReady || millis() < nextLedUpdate)
+        return;
+
+    if (showFPS) {
+        fpsCount++;
+
+        if (millis() > nextFPSCount) {
+            nextFPSCount = millis() + 1000;
+            char buffer[10];
+            snprintf(buffer, 10, "%d", fpsCount);
+            mqttClient.publish("log/fps", buffer);
+            fpsCount = 0;
+        }
+    }
+
+    indexHue += lightSpeed;
+
+
+    for (uint8_t strip = 0; strip < logicalStrips; strip++)
+    {
+        if (!stripData[strip].enabled && !stripData[strip].active && stripData[strip].brightness == 0)
+            continue;
+
+        if (stripData[strip].enabled && !stripData[strip].active)
+        {
+            stripData[strip].active = true;
+            stripData[strip].brightness = 0;
+
+            for (uint8_t i = 0; i < stripData[strip].numLeds; i++)
+                leds.setPixelColor(stripMapping[strip][i], 0);
+        }
+
+        if (stripData[strip].enabled && stripData[strip].brightness != stripData[strip].targetBrightness)
+        {
+            if (strip == 0)
+            {
+                /*
+                if (stripData[strip].brightness <= (stripData[strip].targetBrightness-5))
+                    stripData[strip].brightness += 5;
+                else if (stripData[strip].targetBrightness <= (stripData[strip].brightness-5))
+                    stripData[strip].brightness -= 5;
+                else
+                    stripData[strip].brightness = stripData[strip].targetBrightness;
+                */
+
+                if (stripData[strip].brightness < stripData[strip].targetBrightness)
+                    stripData[strip].brightness++;
+                else if (stripData[strip].targetBrightness < stripData[strip].brightness)
+                    stripData[strip].brightness--;
+                
+                leds.setBrightness(stripData[strip].brightness);
+            }
+        }
+        else if (!stripData[strip].enabled && stripData[strip].brightness != 0)
+        {
+            if (strip == 0)
+            {
+                //if (stripData[strip].brightness >= 5)
+                //    stripData[strip].brightness -= 5;
+                //else
+                //    stripData[strip].brightness = 0;
+                stripData[strip].brightness--;
+                leds.setBrightness(stripData[strip].brightness);
+            }
+        }
+        else if (!stripData[strip].enabled && stripData[strip].brightness == 0 && stripData[strip].active)
+        {
+            stripData[strip].active = false;
+        }
+
+        if (stripData[strip].effect == LIGHT_EFFECT_RAINBOW)
+        {
+            fillRainbow(indexHue, strip);
+        }
+        else if (stripData[strip].effect == LIGHT_EFFECT_HENRY)
+        {
+            uint8_t loopCount = lightSpeed / 10;
+            
+            loopCount = loopCount < 1 ? 1: loopCount;
+
+            if (HenryLedNumber < stripData[strip].numLeds)
+            {
+                for (uint8_t i = 0; i < loopCount; i++)
+                {
+                    leds.setPixelColor(stripMapping[strip][HenryLedNumber+i], HenryColorOrBlack ? HenryColors[HenryColor] : 0);    
+                }
+                
+            }
+
+            if (strip == 5)
+            {
+                if (HenryLedNumber+loopCount >= 96)
+                {
+                    HenryLedNumber = 0;
+                    HenryColorOrBlack = !HenryColorOrBlack;
+                    if (!HenryColorOrBlack)
+                        HenryColor = HenryColor == 4 ? 0 : HenryColor + 1;
+                }
+                else
+                {
+                    HenryLedNumber += loopCount;
+                }
+            }
+        }
+        else if (stripData[strip].effect == LIGHT_EFFECT_SOLID)
+        {
+            fadeyShelfy(strip);
+        }
+    }
+
+    leds.show();
+    nextLedUpdate = millis() + (1000 / targetFPS);
+}
+
+void setup()
+{
+    pinMode(ONBOARD_LED_PIN, OUTPUT);
+    pinMode(relayPin, OUTPUT);
+    digitalWrite(relayPin, LOW);
+    digitalWrite(ONBOARD_LED_PIN, HIGH);
+
+    Log.setup();
+    
+    connectToNetwork();
+
+    buildLedMapping();
+
+    if (!leds.begin()) {
+        // Blink the onboard LED if that happens.
+        pinMode(LED_BUILTIN, OUTPUT);
+        for (;;) digitalWrite(LED_BUILTIN, (millis() / 500) & 1);
+    }
+
+    setupOTA();
+
+    setupMQTT();
+}
+
+void loop()
+{
+    ArduinoOTA.handle();
+
+    if (otaUpdating)
+        return;
+
+    manageWiFi();
+
+    manageMQTT();
+
+    manageOnboardLED();
+
+    managePSU();
+
+    manageLeds();
 }
