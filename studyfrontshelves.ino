@@ -3,16 +3,7 @@
 
 #include "StandardFeatures.h"
 #include "studyfrontshelves.h"
-/*
-void connectToNetwork()
-{
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(wifiSSID, wifiPassword);
 
-    if (WiFi.waitForConnectResult() == WL_CONNECTED && wifiReconnectCount == 0)
-        Log.println("Connected to WiFi");
-}
-*/
 void buildLedMapping()
 {
     for (uint16_t i = 0; i < stripData[0].numLeds; i++)
@@ -36,65 +27,7 @@ void buildLedMapping()
     for (uint16_t i = 0; i < (stripData[5].numLeds-35); i++)
         stripMapping[5][35+i] = i;
 }
-/*
-void setupOTA()
-{
-    ArduinoOTA.setHostname(deviceName);
-  
-    ArduinoOTA.onStart([]()
-    {
-        Log.println("OTA Start");
-        #ifdef DIAGNOSTIC_PIXEL_PIN
-        diagnosticPixel.setPixelColor(0, NEOPIXEL_WHITE);
-        diagnosticPixel.setBrightness(diagnosticPixelMaxBrightness);
-        diagnosticPixel.show();
-        #endif
-    });
 
-    ArduinoOTA.onEnd([]()
-    {
-        Log.println("OTA End");
-    });
-
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
-    {
-    });
-
-    ArduinoOTA.onError([](ota_error_t error)
-    {
-        Serial.printf("Error[%u]: ", error);
-        if (error == OTA_AUTH_ERROR)
-        {
-            Log.println("Auth Failed");
-        }
-        else if (error == OTA_BEGIN_ERROR)
-        {
-            Log.println("Begin Failed");
-        }
-        else if (error == OTA_CONNECT_ERROR)
-        {
-            Log.println("Connect Failed");
-        }
-        else if (error == OTA_RECEIVE_ERROR)
-        {
-            Log.println("Receive Failed");
-        }
-        else if (error == OTA_END_ERROR)
-        {
-            Log.println("End Failed");
-        }
-    });
-    
-    ArduinoOTA.begin();
-}
-
-void setupMQTT()
-{
-    mqttClient.setBufferSize(4096);
-    mqttClient.setServer(mqtt_server, 1883);
-    mqttClient.setCallback(mqttCallback);
-}
-*/
 void mqttCallback(char* topic, byte* payload, unsigned int length)
 {
     char p[length + 1];
@@ -193,111 +126,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
         mqttClient.publish(bufferTopic, stripData[strip].effect == LIGHT_EFFECT_RAINBOW ? "Rainbow" : stripData[strip].effect == LIGHT_EFFECT_HENRY ? "Henry" : "Solid");
     }
 }
-/*
-void mqttConnect()
-{
-    Log.println("Connecting to MQTT");
-    // Attempt to connect
-    if (mqttClient.connect(deviceName, mqtt_username, mqtt_password))
-    {
-        Log.println("Connected to MQTT");
-        nextMqttConnectAttempt = 0;
 
-        mqttClient.subscribe("home/study/light/front-shelf/+/+/set");
-        mqttClient.subscribe("home/study/light/front-shelf/speed/set");
-        
-        char buffer[40];
-        for (int i = 0; i < logicalStrips; i++)
-        {
-            snprintf(buffer, sizeof(buffer), "home/study/light/front-shelf/%d/switch", i+1);
-            mqttClient.publish(buffer, stripData[i].enabled ? "ON" : "OFF");
-        }
-        std::string s = std::to_string(lightSpeed);
-        mqttClient.publish("home/study/light/front-shelf/speed/state", s.c_str());
-    }
-    else
-    {
-        Log.println("Failed to connect to MQTT");
-        nextMqttConnectAttempt = millis() + mqttReconnectInterval;
-    }
-}
-
-void manageMQTT()
-{
-    if (mqttClient.connected())
-    {
-        mqttClient.loop();
-
-        if (millis() > nextMetricsUpdate)
-        {
-            sendTelegrafMetrics();
-            nextMetricsUpdate = millis() + 30000;
-        }
-
-    }
-    else if (millis() > nextMqttConnectAttempt)
-    {
-        mqttConnect();
-    }
-}
-
-void sendTelegrafMetrics()
-{
-    if (millis() > nextMetricsUpdate)
-    {
-        nextMetricsUpdate = millis() + 30000;
-        uint32_t uptime = esp_timer_get_time() / 1000000;
-
-        char buffer[150];
-        snprintf(buffer, sizeof(buffer),
-            "status,device=%s uptime=%d,resetReason=%d,firmware=\"%s\",memUsed=%ld,memTotal=%ld",
-            deviceName,
-            uptime,
-            esp_reset_reason(),
-            esp_get_idf_version(),
-            (ESP.getHeapSize()-ESP.getFreeHeap()),
-            ESP.getHeapSize());
-        mqttClient.publish("telegraf/particle", buffer);
-    }
-}
-
-void manageOnboardLED()
-{
-    if (millis() < nextOnboardLedUpdate)
-        return;
-
-    nextOnboardLedUpdate = millis() + 1000;
-    onboardLedState = !onboardLedState;
-    digitalWrite(ONBOARD_LED_PIN, onboardLedState ? HIGH : LOW);
-}
-
-void manageWiFi()
-{
-    // if WiFi is down, try reconnecting
-    if ((WiFi.status() != WL_CONNECTED) && (millis() - wifiReconnectPreviousMillis >= wifiReconnectInterval))
-    {
-        if (wifiReconnectCount >= 10)
-        {
-            ESP.restart();
-        }
-        
-        wifiReconnectCount++;
-
-        connectToNetwork();
-
-        if (WiFi.status() == WL_CONNECTED)
-        {
-            wifiReconnectCount = 0;
-            wifiReconnectPreviousMillis = 0;
-            Log.println("Reconnected to WiFi");
-        }
-        else
-        {
-            wifiReconnectPreviousMillis = millis();
-        }
-    }
-}
-*/
 void managePSU()
 {
     if (psuShouldBeEnabled && !psuReady)
@@ -427,10 +256,6 @@ void manageLeds()
         {
             if (strip == 0)
             {
-                //if (stripData[strip].brightness >= 5)
-                //    stripData[strip].brightness -= 5;
-                //else
-                //    stripData[strip].brightness = 0;
                 stripData[strip].brightness--;
                 leds.setBrightness(stripData[strip].brightness);
             }
@@ -509,23 +334,7 @@ void setup()
     StandardSetup();
 
     mqttClient.setCallback(mqttCallback);
-    /*
-    pinMode(ONBOARD_LED_PIN, OUTPUT);
-    digitalWrite(ONBOARD_LED_PIN, HIGH);
 
-    pinMode(relayPin, OUTPUT);
-    digitalWrite(relayPin, LOW);
-
-    Log.setup();
-
-    setupDiagnosticPixel();
-    
-    connectToNetwork();
-
-    setupOTA();
-
-    setupMQTT();
-    */
     buildLedMapping();
 
     leds.begin();
@@ -536,17 +345,7 @@ void loop()
     StandardLoop();
 
     manageLocalMQTT();
-/*
-    ArduinoOTA.handle();
 
-    manageWiFi();
-
-    manageMQTT();
-
-    manageOnboardLED();
-
-    manageDiagnosticPixel();
-*/
     managePSU();
 
     manageLeds();
