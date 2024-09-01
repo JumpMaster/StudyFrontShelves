@@ -134,6 +134,7 @@ void managePSU()
         if (!psuEnabled)
         {
             digitalWrite(relayPin, HIGH);
+            Log.println("Pin high");
             psuEnabled = true;
             diagnosticPixelColor2 = NEOPIXEL_MAGENTA;
             psuReady = false;
@@ -156,6 +157,7 @@ void managePSU()
         {
             psuActionableTime = 0;
             digitalWrite(relayPin, LOW);
+            Log.println("Pin low");
             psuReady = false;
             psuEnabled = false;
             diagnosticPixelColor2 = NEOPIXEL_BLACK;
@@ -331,6 +333,7 @@ void manageLocalMQTT()
 
 void setup()
 {
+    pinMode(relayPin, OUTPUT);
     StandardSetup();
 
     mqttClient.setCallback(mqttCallback);

@@ -13,7 +13,7 @@ bool otaUpdating = false;
 #define NUM_LEDS    96
 #define COLOR_ORDER NEO_RGB
 
-const uint8_t relayPin = 17;
+const uint8_t relayPin = 18;
 int8_t ledPins[8] = { 12, 11, 10, 9, 6, 5, 4, -1 };
 Adafruit_NeoPXL8 leds(NUM_LEDS, ledPins, COLOR_ORDER);
 
