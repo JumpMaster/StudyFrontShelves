@@ -2,7 +2,7 @@
 #define DIAGNOSTIC_LED_PIN  13
 
 #include "StandardFeatures.h"
-#include "studyfrontshelves.h"
+#include "StudyFrontShelves.h"
 
 void buildLedMapping()
 {

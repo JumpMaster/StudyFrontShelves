@@ -4,6 +4,9 @@ secrets.h
 # Visual Studio Code
 .vscode
 
+# PlatformIO
+.pio
+
 # Arduino Compiled Firmware
 build/
 *.bin

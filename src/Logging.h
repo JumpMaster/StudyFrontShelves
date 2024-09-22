@@ -31,10 +31,13 @@ public:
         Serial.begin(115200);
         
         #ifdef ESP32
-        uint8_t chipid[6];
-        esp_read_mac(chipid, ESP_MAC_WIFI_STA);
-        sprintf(_macAddress, "%02x:%02x:%02x:%02x:%02x:%02x",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
-        #else
+        //uint8_t chipid[6];
+        //esp_read_mac(chipid, ESP_MAC_WIFI_STA);
+        uint8_t mac[6] = {0};
+        WiFi.macAddress(mac);
+        //sprintf(_macAddress, "%02x:%02x:%02x:%02x:%02x:%02x",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
+        sprintf(_macAddress, "%02x:%02x:%02x:%02x:%02x:%02x",mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        //#else
         #endif
     }
     void disableSerial(bool onoff) { _disableSerial = onoff; };
