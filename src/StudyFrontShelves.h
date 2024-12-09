@@ -4,6 +4,7 @@
 #include <string>
 #include <Adafruit_NeoPXL8.h>
 #include "secrets.h"
+#include "HAMqttDevice.h"
 
 const bool isDebug = false;
 
@@ -16,6 +17,11 @@ bool otaUpdating = false;
 const uint8_t relayPin = 18;
 int8_t ledPins[8] = { 12, 11, 10, 9, 6, 5, 4, -1 };
 Adafruit_NeoPXL8 leds(NUM_LEDS, ledPins, COLOR_ORDER);
+
+const char* deviceConfig = "{\"identifiers\":\"2994275e-f2c3-46e6-a961-c00087796ddb\",\"name\":\"Study Front Shelf Controller\",\"sw_version\":\"2024.11.0b1\",\"model\":\"Study Front Shelf Controller\",\"manufacturer\":\"Jumpmaster\"}";
+
+bool masterLightSwitch = false;
+HAMqttDevice masterMQTTLight("Master Light", HAMqttDevice::LIGHT);
 
 typedef enum
 {
@@ -47,7 +53,6 @@ StripData stripData[logicalStrips] =
     { 82, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215},
     { 75, false, false, LIGHT_EFFECT_SOLID, 255, 0, 16777215}, // 35 + 40 = 75
 };
-
 uint16_t indexHue = 0;
 uint8_t lightSpeed = 10;
 

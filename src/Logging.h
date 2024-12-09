@@ -9,7 +9,7 @@
 #include <ESPmDNS.h>
 #endif
 
-#define SYSLOG_SERVER   "lb.home.cooper.uk";
+#define SYSLOG_SERVER   "lb5.home.cooper.uk";
 #define SYSLOG_PORT     514
 #define APP_NAME        "FrontShelfController-ESP32"
 

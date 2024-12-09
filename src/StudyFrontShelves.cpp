@@ -39,7 +39,22 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     {
         char buffer[100];
         snprintf(buffer, 100, "%s - %s", topic, p);
-        Log.println(buffer);
+            Log.println(buffer);
+    }
+
+    if (strcmp(masterMQTTLight.getCommandTopic().c_str(), topic) == 0)
+    {
+        //pressAction(portalBlue, single_click);
+        //char buffer[100];
+        //snprintf(buffer, 100, "%s - %s", topic, p);
+        //Log.println(buffer);
+        Log.println("Master switch changed");
+        //masterLightSwitch = !masterLightSwitch;
+        masterLightSwitch = strcmp(p, "ON") == 0;
+        //mainLight = state;
+        mqttClient.publish(masterMQTTLight.getStateTopic().c_str(), masterLightSwitch ? "ON" : "OFF", true);
+        return;
+
     }
 
     if (strlen(topic) == 38 && strncmp(topic, "home/study/light/front-shelf/speed/set", 38) == 0)
@@ -317,6 +332,11 @@ void manageLocalMQTT()
     {
         mqttReconnected = false;
 
+
+        mqttClient.publish(masterMQTTLight.getConfigTopic().c_str(), masterMQTTLight.getConfigPayload().c_str(), true);
+        mqttClient.publish(masterMQTTLight.getStateTopic().c_str(), masterLightSwitch ? "ON" : "OFF", true);
+        mqttClient.subscribe(masterMQTTLight.getCommandTopic().c_str());
+
         mqttClient.subscribe("home/study/light/front-shelf/+/+/set");
         mqttClient.subscribe("home/study/light/front-shelf/speed/set");
         
@@ -337,6 +357,16 @@ void setup()
     StandardSetup();
 
     mqttClient.setCallback(mqttCallback);
+    masterMQTTLight
+        .addConfigVar("device", deviceConfig)
+        .enableAttributesTopic()
+        .addConfigVar("bri_stat_t", "~/br/state")   // Brightness State Topic
+        .addConfigVar("bri_cmd_t", "~/br/cmd")      // Brightness State Topic
+        .addConfigVar("rgb_stat_t", "~/rgb/state")  // RGB State Topic
+        .addConfigVar("rgb_cmd_t", "~/rgb/cmd")     // RGB Command Topic
+        .addConfigVar("fx_stat_t", "~/rgb/state")   // FX State Topic
+        .addConfigVar("fx_cmd_t", "~/rgb/cmd")      // FX Command Topic
+        .addConfigVar("fx_list", "[\"Test1\",\"Test2\",\"Test3\"]");  // FX List
 
     buildLedMapping();
 
